@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest --watch --bail"
   },
   "repository": {
     "type": "git",
@@ -12,7 +12,7 @@
   },
   "keywords": [
     "rabbit",
-    "rabbitmq",
+    "rabbitmq", 
     "amqplib",
     "mock",
     "fake"
