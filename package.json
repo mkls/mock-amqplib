@@ -1,0 +1,29 @@
+{
+  "name": "mock-amqplib",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mkls/mock-amqplib.git"
+  },
+  "keywords": [
+    "rabbit",
+    "rabbitmq",
+    "amqplib",
+    "mock",
+    "fake"
+  ],
+  "author": "mkls",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mkls/mock-amqplib/issues"
+  },
+  "homepage": "https://github.com/mkls/mock-amqplib#readme",
+  "devDependencies": {
+    "jest": "^23.5.0"
+  }
+}
