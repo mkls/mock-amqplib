@@ -1,4 +1,4 @@
-# mock-rabbitmq
+# mock-amqplib
 
 This module is intended to replace rabbitMq in integration tests to gain speed in test 
 execution.
@@ -9,7 +9,7 @@ with mock-require in tests:
 ```javaScript
 // setup
 var mockRequire = require('mock-require');
-mockRequire('amqplib', 'mock-rabbitmq');
+mockRequire('amqplib', 'mock-amqplib');
 
 // teardow
 mockRequire.stopAll();
@@ -17,7 +17,7 @@ mockRequire.stopAll();
 
 or simply overwrite amqplibs connect method:
 ```javaScript
-amqplib.connect = mockRabbitMq.connect;
+amqplib.connect = mockAmqplib.connect;
 ```
 
 ##Similar modules:
