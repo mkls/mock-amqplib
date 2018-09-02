@@ -76,3 +76,37 @@ test('checkQueue return status for the queue', async () => {
     messageCount: 2
   })
 });
+
+test('purgeQueue deletes messages from queue', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  await channel.assertQueue('test-queue', { durable: true });
+  await channel.sendToQueue('test-queue', 'test-content-1');
+  await channel.sendToQueue('test-queue', 'test-content-2');
+
+  await channel.purgeQueue('test-queue');
+
+  const message = await channel.get('test-queue');
+  expect(message).toEqual(false);
+});
+
+test('headers exchange', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+
+  await channel.assertExchange('retry-exchange', 'headers');
+  await channel.assertQueue('retry-queue-10s');
+  await channel.assertQueue('retry-queue-20s');
+  await channel.bindQueue('retry-queue-10s', 'retry-exchange', '', { retryCount: 1 });
+  await channel.bindQueue('retry-queue-20s', 'retry-exchange', '', { retryCount: 2 });
+
+  await channel.publish('retry-exchange', 'some-target-queue', 'content-1', {
+    headers: { retryCount: 1 }
+  });
+  await channel.publish('retry-exchange', 'some-other-queue', 'content-2', {
+    headers: { retryCount: 2 }
+  });
+
+  expect(await channel.get('retry-queue-10s')).toMatchObject({ content: 'content-1'});
+  expect(await channel.get('retry-queue-20s')).toMatchObject({ content: 'content-2'});
+});

@@ -2,7 +2,7 @@
   "name": "mock-amqplib",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/main.js",
   "scripts": {
     "test": "jest --watch --bail"
   },
