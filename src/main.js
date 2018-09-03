@@ -1,5 +1,6 @@
 const queues = {};
 const exchanges = {};
+const eventListeners = [];
 
 const createQueue = () => {
   let messages = [];
@@ -43,19 +44,17 @@ const createHeadersExchange = () => {
   };
 };
 
-const sendToQueue = async (queueName, content, options = {}) => {
-  queues[queueName].add({
-    content,
-    fields: {
-      exchange: '',
-      routingKey: queueName
-    },
-    properties: options
-  });
-}
-
 const createChannel = async () => ({
-  on: () => {},
+  on: (eventName, listener) => {
+    eventListeners.push({ eventName, listener });
+  },
+  emit: emittedEventName => {
+    eventListeners.forEach(({ eventName, listener }) => {
+      if (eventName === emittedEventName) {
+        listener();
+      }
+    })
+  },
   close: () => {},
   assertQueue: async queuName => {
     queues[queuName] = createQueue();
@@ -69,15 +68,29 @@ const createChannel = async () => ({
     const exchange = exchanges[sourceEchange];
     exchange.bindQueue(queue, pattern, options);
   },
-  publish: async (exchangeName, routingKey, content, options = {}) => {
+  publish: async (exchangeName, routingKey, content, { headers } = {}) => {
     const exchange = exchanges[exchangeName];
-    const targetQueueName = exchange.getTargetQueue(
-      routingKey,
-      options.headers
-    );
-    sendToQueue(targetQueueName, content, options);
+    const queueName = exchange.getTargetQueue(routingKey, headers);
+
+    queues[queueName].add({
+      content,
+      fields: {
+        exchange: exchangeName,
+        routingKey
+      },
+      properties: { headers: headers || {} }
+    });
   },
-  sendToQueue,
+  sendToQueue: async (queueName, content, { headers } = {}) => {
+    queues[queueName].add({
+      content,
+      fields: {
+        exchange: '',
+        routingKey: queueName
+      },
+      properties: { headers: headers || {} }
+    });
+  },
   get: async (queueName, { noAck } = {}) => {
     return queues[queueName].get();
   },
@@ -88,8 +101,10 @@ const createChannel = async () => ({
   },
   cancel: async consumerTag => queues[consumerTag].stopConsume(),
   ack: async () => {},
-  nack: async message => {
-    queues[message.fields.routingKey].add(message);
+  nack: async (message, allUpTo = false, requeue = true) => {
+    if (requeue) {
+      queues[message.fields.routingKey].add(message);
+    }
   },
   checkQueue: queueName => ({
     queue: queueName,

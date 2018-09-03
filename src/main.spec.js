@@ -39,7 +39,7 @@ test('consuming messages', async () => {
   await channel.sendToQueue('test-queue', 'test-message-3');
 
   expect(consumer.mock.calls).toMatchObject([
-    [{ content: 'test-message-1' }],
+    [{ content: 'test-message-1', properties: { headers: expect.anything() } }],
     [{ content: 'test-message-2' }]
   ]);
 });
@@ -107,6 +107,55 @@ test('headers exchange', async () => {
     headers: { retryCount: 2 }
   });
 
-  expect(await channel.get('retry-queue-10s')).toMatchObject({ content: 'content-1'});
+  expect(await channel.get('retry-queue-10s')).toMatchObject({
+    content: 'content-1',
+    fields: {
+      exchange: 'retry-exchange',
+      routingKey: 'some-target-queue'
+    }
+  });
   expect(await channel.get('retry-queue-20s')).toMatchObject({ content: 'content-2'});
+});
+
+test('emitting on a channel triggers on callbacks', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  const listener = jest.fn();
+
+  channel.on('close', listener);
+  channel.emit('close');
+
+  expect(listener).toBeCalled();
+});
+
+test('it should always set header property of messages even if not set', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  await channel.assertQueue('test-queue');
+
+  await channel.sendToQueue('test-queue', 'test-content');
+
+  const message = await channel.get('test-queue');
+
+  expect(message).toMatchObject({
+    content: 'test-content',
+    properties: {
+      headers: expect.anything()
+    }
+  });
+});
+
+it('should not put nack-ed messages back to queue if requeue is set to false', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  await channel.assertQueue('test-queue');
+
+  await channel.sendToQueue('test-queue', 'test-content');
+
+  const message = await channel.get('test-queue');
+  await channel.nack(message, false, false);
+
+  const reRead = await channel.get('test-queue');
+
+  expect(reRead).toEqual(false);
 });
