@@ -116,6 +116,7 @@ const createChannel = async () => ({
 module.exports = {
   connect: async () => ({
     createChannel,
+    on: () => {},
     close: () => {}
   })
 };
