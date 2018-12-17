@@ -26,6 +26,21 @@ const createQueue = () => {
   };
 };
 
+const createFanoutExchange = () => {
+  const bindings = [];
+  return {
+    bindQueue: (queueName, pattern, options) => {
+      bindings.push({
+        targetQueue: queueName,
+        options
+      });
+    },
+    getTargetQueues: (routingKey, options = {}) => {
+      return [...bindings];
+    }
+  };
+};
+
 const createHeadersExchange = () => {
   const bindings = [];
   return {
@@ -35,11 +50,11 @@ const createHeadersExchange = () => {
         options
       });
     },
-    getTargetQueue: (routingKey, headers) => {
+    getTargetQueues: (routingKey, options = {}) => {
       const isMatching = (binding, headers) =>
         Object.keys(binding.options).every(key => binding.options[key] === headers[key]);
-      const matchingBinding = bindings.find(binding => isMatching(binding, headers));
-      return matchingBinding.targetQueue;
+      const matchingBinding = bindings.find(binding => isMatching(binding, options.headers || {}));
+      return [matchingBinding.targetQueue];
     }
   };
 };
@@ -60,26 +75,38 @@ const createChannel = async () => ({
     queues[queueName] = createQueue();
   },
   assertExchange: async (exchangeName, type) => {
-    if (type === 'headers') {
-      exchanges[exchangeName] = createHeadersExchange();
+    let exchange;
+
+    switch(type) {
+      case 'fanout':
+        exchange = createFanoutExchange();
+        break;
+      case 'headers':
+        exchange = createHeadersExchange();
+        break;
     }
+
+    exchanges[exchangeName] = exchange;
   },
   bindQueue: async (queue, sourceExchange, pattern, options = {}) => {
     const exchange = exchanges[sourceExchange];
     exchange.bindQueue(queue, pattern, options);
   },
-  publish: async (exchangeName, routingKey, content, { headers } = {}) => {
+  publish: async (exchangeName, routingKey, content, options = {}) => {
     const exchange = exchanges[exchangeName];
-    const queueName = exchange.getTargetQueue(routingKey, headers);
-
-    queues[queueName].add({
+    const queueNames = exchange.getTargetQueues(routingKey, options);
+    const message = {
       content,
       fields: {
         exchange: exchangeName,
         routingKey
       },
-      properties: { headers: headers || {} }
-    });
+      properties: options
+    };
+
+    for(const queueName of queueNames) {
+      queues[queueName].add(message);
+    }
   },
   sendToQueue: async (queueName, content, { headers } = {}) => {
     queues[queueName].add({
