@@ -24,6 +24,6 @@
   },
   "homepage": "https://github.com/mkls/mock-amqplib#readme",
   "devDependencies": {
-    "jest": "^23.5.0"
+    "jest": "^23.6.0"
   }
 }
