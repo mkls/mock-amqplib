@@ -1,9 +1,9 @@
 # mock-amqplib
 
-This module is intended to replace rabbitMq in integration tests to gain speed in test 
+This module is intended to replace rabbitMq in integration tests to gain speed in test
 execution.
 
-##Usage 
+## Usage
 with mock-require in tests:
 
 ```javaScript
@@ -20,8 +20,8 @@ or simply overwrite amqplibs connect method:
 amqplib.connect = mockAmqplib.connect;
 ```
 
-##Similar modules:
-amqplib-mocks, exp-fake-amqplib (callbacks only), amqplib-mock, 
+## Similar modules:
+amqplib-mocks, exp-fake-amqplib (callbacks only), amqplib-mock,
 
 As far as I can tell they try to solve the same problem, but they implemented different
 parts of the API.
