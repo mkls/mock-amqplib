@@ -38,8 +38,8 @@ const createHeadersExchange = () => {
     getTargetQueue: (routingKey, headers) => {
       const isMatching = (binding, headers) =>
         Object.keys(binding.options).every(key => binding.options[key] === headers[key]);
-      const matcingBinding = bindings.find(binding => isMatching(binding, headers));
-      return matcingBinding.targetQueue;
+      const matchingBinding = bindings.find(binding => isMatching(binding, headers));
+      return matchingBinding.targetQueue;
     }
   };
 };
@@ -56,16 +56,16 @@ const createChannel = async () => ({
     })
   },
   close: () => {},
-  assertQueue: async queuName => {
-    queues[queuName] = createQueue();
+  assertQueue: async queueName => {
+    queues[queueName] = createQueue();
   },
   assertExchange: async (exchangeName, type) => {
     if (type === 'headers') {
       exchanges[exchangeName] = createHeadersExchange();
     }
   },
-  bindQueue: async (queue, sourceEchange, pattern, options = {}) => {
-    const exchange = exchanges[sourceEchange];
+  bindQueue: async (queue, sourceExchange, pattern, options = {}) => {
+    const exchange = exchanges[sourceExchange];
     exchange.bindQueue(queue, pattern, options);
   },
   publish: async (exchangeName, routingKey, content, { headers } = {}) => {
