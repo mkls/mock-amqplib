@@ -32,11 +32,30 @@ const createFanoutExchange = () => {
     bindQueue: (queueName, pattern, options) => {
       bindings.push({
         targetQueue: queueName,
-        options
+        options,
+        pattern
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
       return [...bindings];
+    }
+  };
+};
+
+
+const createDirectExchange = () => {
+  const bindings = [];
+  return {
+    bindQueue: (queueName, pattern, options) => {
+      bindings.push({
+        targetQueue: queueName,
+        options,
+        pattern
+      });
+    },
+    getTargetQueues: (routingKey, options = {}) => {
+      const matchingBinding = bindings.find(binding => binding.pattern === routingKey);
+      return [matchingBinding.targetQueue];
     }
   };
 };
@@ -47,7 +66,8 @@ const createHeadersExchange = () => {
     bindQueue: (queueName, pattern, options) => {
       bindings.push({
         targetQueue: queueName,
-        options
+        options,
+        pattern
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
@@ -80,6 +100,9 @@ const createChannel = async () => ({
     switch(type) {
       case 'fanout':
         exchange = createFanoutExchange();
+        break;
+      case 'direct':
+        exchange = createDirectExchange();
         break;
       case 'headers':
         exchange = createHeadersExchange();
