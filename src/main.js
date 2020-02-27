@@ -37,7 +37,7 @@ const createFanoutExchange = () => {
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
-      return [...bindings];
+      return [...bindings.map(binding => binding.targetQueue)];
     }
   };
 };
