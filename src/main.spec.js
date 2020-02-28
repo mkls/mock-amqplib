@@ -90,7 +90,7 @@ test('purgeQueue deletes messages from queue', async () => {
   expect(message).toEqual(false);
 });
 
-test.only('direct exchange', async () => {
+test('direct exchange', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
 
