@@ -42,7 +42,6 @@ const createFanoutExchange = () => {
   };
 };
 
-
 const createDirectExchange = () => {
   const bindings = [];
   return {
