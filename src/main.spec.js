@@ -181,3 +181,23 @@ it('should not put nack-ed messages back to queue if requeue is set to false', a
 
   expect(reRead).toEqual(false);
 });
+
+test('assert queue should return object with property "queue"', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  const queue = await channel.assertQueue('test-queue');
+  expect(queue).toMatchObject({
+    queue: 'test-queue'
+  });
+});
+
+test('assert empty queue should create new queue with random name with prefix "amq.gen-"', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  const queue1 = await channel.assertQueue('');
+  const queue2 = await channel.assertQueue('');
+
+  expect(queue1.queue).toMatch(/^amq.gen-\w+/);
+  expect(queue2.queue).toMatch(/^amq.gen-\w+/);
+  expect(queue1.queue).not.toBe(queue2.queue);
+});

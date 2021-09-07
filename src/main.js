@@ -91,7 +91,11 @@ const createChannel = async () => ({
   },
   close: () => {},
   assertQueue: async queueName => {
+    if (!queueName) {
+      queueName = generateRandomQueueName();
+    }
     queues[queueName] = createQueue();
+    return { queue: queueName };
   },
   assertExchange: async (exchangeName, type) => {
     let exchange;
@@ -161,6 +165,15 @@ const createChannel = async () => ({
   }),
   purgeQueue: queueName => queues[queueName].purge()
 });
+
+const generateRandomQueueName = () => {
+  const ABS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let res = 'amq.gen-';
+  for(let i=0; i<22; i++){
+    res += ABS.charCodeAt(Math.floor(Math.random() * ABS.length));
+  }
+  return res;
+};
 
 module.exports = {
   connect: async () => ({
