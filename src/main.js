@@ -167,10 +167,10 @@ const createChannel = async () => ({
 });
 
 const generateRandomQueueName = () => {
-  const ABS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_';
   let res = 'amq.gen-';
-  for(let i=0; i<22; i++){
-    res += ABS.charCodeAt(Math.floor(Math.random() * ABS.length));
+  for( let i=0; i<22; i++ ){
+    res += ABC[(Math.floor(Math.random() * ABC.length))];
   }
   return res;
 };
