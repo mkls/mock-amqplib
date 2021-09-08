@@ -197,7 +197,7 @@ test('assert empty queue should create new queue with random name with prefix "a
   const queue1 = await channel.assertQueue('');
   const queue2 = await channel.assertQueue('');
 
-  expect(queue1.queue).toMatch(/^amq.gen-\w+/);
-  expect(queue2.queue).toMatch(/^amq.gen-\w+/);
+  expect(queue1.queue).toMatch(/^amq.gen-\w{22}/);
+  expect(queue2.queue).toMatch(/^amq.gen-\w{22}/);
   expect(queue1.queue).not.toBe(queue2.queue);
 });
