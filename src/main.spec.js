@@ -112,6 +112,48 @@ test('direct exchange', async () => {
   expect(await channel.get('retry-queue-20s')).toEqual(false);
 });
 
+test('x-delayed-message exchange', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+
+  await channel.assertExchange('retry-exchange', 'x-delayed-message');
+  await channel.assertQueue('retry-queue-10s');
+  await channel.assertQueue('retry-queue-20s');
+  await channel.bindQueue('retry-queue-10s', 'retry-exchange', 'some-target-queue');
+  await channel.bindQueue('retry-queue-20s', 'retry-exchange', 'some-other-queue');
+
+  await channel.publish('retry-exchange', 'some-target-queue', 'content-1')
+
+  expect(await channel.get('retry-queue-10s')).toMatchObject({
+    content: 'content-1',
+    fields: {
+      exchange: 'retry-exchange',
+      routingKey: 'some-target-queue'
+    }
+  });
+  expect(await channel.get('retry-queue-20s')).toEqual(false);
+
+  await channel.assertExchange('retry-exchange-with-options', 'x-delayed-message', {
+    durable: true,
+    arguments: { 'x-delayed-type': 'direct' },
+  });
+  await channel.assertQueue('retry-queue-10s-options');
+  await channel.assertQueue('retry-queue-20s-options');
+  await channel.bindQueue('retry-queue-10s-options', 'retry-exchange-with-options', 'some-target-queue-options');
+  await channel.bindQueue('retry-queue-20s-options', 'retry-exchange-with-options', 'some-other-queue-options');
+
+  await channel.publish('retry-exchange-with-options', 'some-target-queue-options', 'content-2')
+
+  expect(await channel.get('retry-queue-10s-options')).toMatchObject({
+    content: 'content-2',
+    fields: {
+      exchange: 'retry-exchange-with-options',
+      routingKey: 'some-target-queue-options'
+    }
+  });
+  expect(await channel.get('retry-queue-20s-options')).toEqual(false);
+});
+
 test('headers exchange', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
