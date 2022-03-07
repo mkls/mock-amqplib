@@ -105,6 +105,7 @@ const createChannel = async () => ({
         exchange = createFanoutExchange();
         break;
       case 'direct':
+      case 'x-delayed-message':
         exchange = createDirectExchange();
         break;
       case 'headers':
