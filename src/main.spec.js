@@ -243,3 +243,31 @@ test('assert empty queue should create new queue with random name with prefix "a
   expect(queue2.queue).toMatch(/^amq.gen-\w{22}/);
   expect(queue1.queue).not.toBe(queue2.queue);
 });
+
+test('assert "credentials" to have been defined with required methods', () => {
+  expect(amqp.credentials).toBeDefined();
+  expect(amqp.credentials.plain).toBeDefined();
+  expect(amqp.credentials.amqplain).toBeDefined();
+  expect(amqp.credentials.external).toBeDefined();
+});
+
+test('assert required methods of "credentials"', () => {
+  expect(amqp.credentials.plain('user', 'pass')).toEqual({
+    mechanism: 'PLAIN',
+    response: expect.any(Function),
+    username: 'user',
+    password: 'pass',
+  });
+
+  expect(amqp.credentials.amqplain('user', 'pass')).toEqual({
+    mechanism: 'AMQPLAIN',
+    response: expect.any(Function),
+    username: 'user',
+    password: 'pass',
+  });
+
+  expect(amqp.credentials.external()).toEqual({
+    mechanism: 'EXTERNAL',
+    response: expect.any(Function)
+  });
+});
