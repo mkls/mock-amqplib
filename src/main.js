@@ -176,10 +176,30 @@ const generateRandomQueueName = () => {
   return res;
 };
 
+const credentials = {
+  plain: (username, password) => ({
+    mechanism: 'PLAIN',
+    response: () => '',
+    username,
+    password
+  }),
+  amqplain: (username, password) => ({
+    mechanism: 'AMQPLAIN',
+    response: () => '',
+    username,
+    password
+  }),
+  external: () => ({
+    mechanism: 'EXTERNAL',
+    response: () => '',
+  })
+}
+
 module.exports = {
   connect: async () => ({
     createChannel,
     on: () => {},
     close: () => {}
-  })
+  }),
+  credentials
 };
