@@ -53,9 +53,7 @@ const createDirectExchange = () => {
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
-      const matchingBinding = bindings.find(
-        (binding) => binding.pattern === routingKey
-      );
+      const matchingBinding = bindings.find((binding) => binding.pattern === routingKey);
       return [matchingBinding.targetQueue];
     },
   };
@@ -72,13 +70,8 @@ const createHeadersExchange = () => {
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
-      const isMatching = (binding, headers) =>
-        Object.keys(binding.options).every(
-          (key) => binding.options[key] === headers[key]
-        );
-      const matchingBinding = bindings.find((binding) =>
-        isMatching(binding, options.headers || {})
-      );
+      const isMatching = (binding, headers) => Object.keys(binding.options).every((key) => binding.options[key] === headers[key]);
+      const matchingBinding = bindings.find((binding) => isMatching(binding, options.headers || {}));
       return [matchingBinding.targetQueue];
     },
   };
@@ -109,14 +102,14 @@ const createChannel = async () => ({
     let exchange;
 
     switch (type) {
-      case "fanout":
+      case 'fanout':
         exchange = createFanoutExchange();
         break;
-      case "direct":
-      case "x-delayed-message":
+      case 'direct':
+      case 'x-delayed-message':
         exchange = createDirectExchange();
         break;
-      case "headers":
+      case 'headers':
         exchange = createHeadersExchange();
         break;
     }
@@ -147,7 +140,7 @@ const createChannel = async () => ({
     queues[queueName].add({
       content,
       fields: {
-        exchange: "",
+        exchange: '',
         routingKey: queueName,
       },
       properties: { headers: headers || {} },
@@ -176,8 +169,8 @@ const createChannel = async () => ({
 });
 
 const generateRandomQueueName = () => {
-  const ABC = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
-  let res = "amq.gen-";
+  const ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_';
+  let res = 'amq.gen-';
   for (let i = 0; i < 22; i++) {
     res += ABC[Math.floor(Math.random() * ABC.length)];
   }
@@ -186,20 +179,20 @@ const generateRandomQueueName = () => {
 
 const credentials = {
   plain: (username, password) => ({
-    mechanism: "PLAIN",
-    response: () => "",
+    mechanism: 'PLAIN',
+    response: () => '',
     username,
     password,
   }),
   amqplain: (username, password) => ({
-    mechanism: "AMQPLAIN",
-    response: () => "",
+    mechanism: 'AMQPLAIN',
+    response: () => '',
     username,
     password,
   }),
   external: () => ({
-    mechanism: "EXTERNAL",
-    response: () => "",
+    mechanism: 'EXTERNAL',
+    response: () => '',
   }),
 };
 
