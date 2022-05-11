@@ -1,6 +1,6 @@
 {
   "name": "mock-amqplib",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "stub rabbit mq in integration tests",
   "main": "src/main.js",
   "scripts": {

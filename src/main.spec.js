@@ -1,4 +1,3 @@
-
 const amqp = require('./main');
 
 const generateQueueName = () => `test-queue-${Math.random()}`;
@@ -10,7 +9,7 @@ test('getting a single message from queue', async () => {
   await channel.assertQueue(queueName, { durable: true });
 
   await channel.sendToQueue(queueName, 'test-content', {
-    headers: { groupBy: 'groupness' },
+    headers: { groupBy: 'groupness' }
   });
 
   const message = await channel.get(queueName, { noAck: true });
@@ -19,8 +18,8 @@ test('getting a single message from queue', async () => {
   expect(message).toMatchObject({
     content: 'test-content',
     properties: {
-      headers: { groupBy: 'groupness' },
-    },
+      headers: { groupBy: 'groupness' }
+    }
   });
   expect(emptyQueueResponse).toEqual(false);
 });
@@ -45,7 +44,7 @@ test('consuming messages', async () => {
 
   expect(consumer.mock.calls).toMatchObject([
     [{ content: 'test-message-1', properties: { headers: expect.anything() } }],
-    [{ content: 'test-message-2' }],
+    [{ content: 'test-message-2' }]
   ]);
 });
 
@@ -59,8 +58,6 @@ test('nackinkg a message puts it back to queue', async () => {
 
   const message = await channel.get(queueName);
   const afterRead = await channel.get(queueName);
-  console.log('message', message);
-  console.log('afterRead', afterRead);
 
   await channel.nack(message);
 
@@ -82,7 +79,7 @@ test('checkQueue return status for the queue', async () => {
 
   expect(status).toEqual({
     queue: queueName,
-    messageCount: 2,
+    messageCount: 2
   });
 });
 
@@ -115,8 +112,8 @@ test('direct exchange', async () => {
     content: 'content-1',
     fields: {
       exchange: 'retry-exchange',
-      routingKey: 'some-target-queue',
-    },
+      routingKey: 'some-target-queue'
+    }
   });
   expect(await channel.get('retry-queue-20s')).toEqual(false);
 });
@@ -137,19 +134,27 @@ test('x-delayed-message exchange', async () => {
     content: 'content-1',
     fields: {
       exchange: 'retry-exchange',
-      routingKey: 'some-target-queue',
-    },
+      routingKey: 'some-target-queue'
+    }
   });
   expect(await channel.get('retry-queue-20s')).toEqual(false);
 
   await channel.assertExchange('retry-exchange-with-options', 'x-delayed-message', {
     durable: true,
-    arguments: { 'x-delayed-type': 'direct' },
+    arguments: { 'x-delayed-type': 'direct' }
   });
   await channel.assertQueue('retry-queue-10s-options');
   await channel.assertQueue('retry-queue-20s-options');
-  await channel.bindQueue('retry-queue-10s-options', 'retry-exchange-with-options', 'some-target-queue-options');
-  await channel.bindQueue('retry-queue-20s-options', 'retry-exchange-with-options', 'some-other-queue-options');
+  await channel.bindQueue(
+    'retry-queue-10s-options',
+    'retry-exchange-with-options',
+    'some-target-queue-options'
+  );
+  await channel.bindQueue(
+    'retry-queue-20s-options',
+    'retry-exchange-with-options',
+    'some-other-queue-options'
+  );
 
   await channel.publish('retry-exchange-with-options', 'some-target-queue-options', 'content-2');
 
@@ -157,8 +162,8 @@ test('x-delayed-message exchange', async () => {
     content: 'content-2',
     fields: {
       exchange: 'retry-exchange-with-options',
-      routingKey: 'some-target-queue-options',
-    },
+      routingKey: 'some-target-queue-options'
+    }
   });
   expect(await channel.get('retry-queue-20s-options')).toEqual(false);
 });
@@ -171,28 +176,28 @@ test('headers exchange', async () => {
   await channel.assertQueue('retry-queue-10s');
   await channel.assertQueue('retry-queue-20s');
   await channel.bindQueue('retry-queue-10s', 'retry-exchange', '', {
-    retryCount: 1,
+    retryCount: 1
   });
   await channel.bindQueue('retry-queue-20s', 'retry-exchange', '', {
-    retryCount: 2,
+    retryCount: 2
   });
 
   await channel.publish('retry-exchange', 'some-target-queue', 'content-1', {
-    headers: { retryCount: 1 },
+    headers: { retryCount: 1 }
   });
   await channel.publish('retry-exchange', 'some-other-queue', 'content-2', {
-    headers: { retryCount: 2 },
+    headers: { retryCount: 2 }
   });
 
   expect(await channel.get('retry-queue-10s')).toMatchObject({
     content: 'content-1',
     fields: {
       exchange: 'retry-exchange',
-      routingKey: 'some-target-queue',
-    },
+      routingKey: 'some-target-queue'
+    }
   });
   expect(await channel.get('retry-queue-20s')).toMatchObject({
-    content: 'content-2',
+    content: 'content-2'
   });
 });
 
@@ -220,8 +225,8 @@ test('it should always set header property of messages even if not set', async (
   expect(message).toMatchObject({
     content: 'test-content',
     properties: {
-      headers: expect.anything(),
-    },
+      headers: expect.anything()
+    }
   });
 });
 
@@ -247,7 +252,7 @@ test('assert queue should return object with property "queue"', async () => {
   const queueName = generateQueueName();
   const queue = await channel.assertQueue(queueName);
   expect(queue).toMatchObject({
-    queue: queueName,
+    queue: queueName
   });
 });
 
@@ -274,44 +279,36 @@ test('assert required methods of "credentials"', () => {
     mechanism: 'PLAIN',
     response: expect.any(Function),
     username: 'user',
-    password: 'pass',
+    password: 'pass'
   });
 
   expect(amqp.credentials.amqplain('user', 'pass')).toEqual({
     mechanism: 'AMQPLAIN',
     response: expect.any(Function),
     username: 'user',
-    password: 'pass',
+    password: 'pass'
   });
 
   expect(amqp.credentials.external()).toEqual({
     mechanism: 'EXTERNAL',
-    response: expect.any(Function),
+    response: expect.any(Function)
   });
 });
 
-test('ensure consuming messages works', async () => {
+test('ensure consuming messages works even is queues is asserted multiple times', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
   const queueName = generateQueueName();
   await channel.assertQueue(queueName);
-  let firstMessagePayload = null;
-  let secondMessagePayload = null;
+  const receivedMessages = [];
   await channel.consume(queueName, ({ content }) => {
-    switch (content) {
-      case 1:
-        firstMessagePayload = 1;
-        break;
-      case 2:
-        secondMessagePayload = 2;
-        break;
-    }
+    receivedMessages.push(content);
   });
 
   await channel.assertQueue(queueName);
   await channel.sendToQueue(queueName, 1);
   await channel.assertQueue(queueName);
   await channel.sendToQueue(queueName, 2);
-  expect(firstMessagePayload).toBe(1);
-  expect(secondMessagePayload).toBe(2);
+
+  expect(receivedMessages).toEqual([1, 2]);
 });
