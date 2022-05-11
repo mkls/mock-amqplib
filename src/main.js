@@ -7,7 +7,7 @@ const createQueue = () => {
   let subscriber = null;
 
   return {
-    add: (item) => {
+    add: item => {
       if (subscriber) {
         subscriber(item);
       } else {
@@ -15,14 +15,14 @@ const createQueue = () => {
       }
     },
     get: () => messages.shift() || false,
-    addConsumer: (consumer) => {
-      messages.forEach((item) => consumer(item));
+    addConsumer: consumer => {
+      messages.forEach(item => consumer(item));
       messages = [];
       subscriber = consumer;
     },
     stopConsume: () => (subscriber = null),
     getMessageCount: () => messages.length,
-    purge: () => (messages = []),
+    purge: () => (messages = [])
   };
 };
 
@@ -33,12 +33,12 @@ const createFanoutExchange = () => {
       bindings.push({
         targetQueue: queueName,
         options,
-        pattern,
+        pattern
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
-      return [...bindings.map((binding) => binding.targetQueue)];
-    },
+      return [...bindings.map(binding => binding.targetQueue)];
+    }
   };
 };
 
@@ -49,13 +49,13 @@ const createDirectExchange = () => {
       bindings.push({
         targetQueue: queueName,
         options,
-        pattern,
+        pattern
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
-      const matchingBinding = bindings.find((binding) => binding.pattern === routingKey);
+      const matchingBinding = bindings.find(binding => binding.pattern === routingKey);
       return [matchingBinding.targetQueue];
-    },
+    }
   };
 };
 
@@ -66,14 +66,15 @@ const createHeadersExchange = () => {
       bindings.push({
         targetQueue: queueName,
         options,
-        pattern,
+        pattern
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
-      const isMatching = (binding, headers) => Object.keys(binding.options).every((key) => binding.options[key] === headers[key]);
-      const matchingBinding = bindings.find((binding) => isMatching(binding, options.headers || {}));
+      const isMatching = (binding, headers) =>
+        Object.keys(binding.options).every(key => binding.options[key] === headers[key]);
+      const matchingBinding = bindings.find(binding => isMatching(binding, options.headers || {}));
       return [matchingBinding.targetQueue];
-    },
+    }
   };
 };
 
@@ -81,15 +82,15 @@ const createChannel = async () => ({
   on: (eventName, listener) => {
     eventListeners.push({ eventName, listener });
   },
-  emit: (emittedEventName) => {
+  emit: emittedEventName => {
     eventListeners.forEach(({ eventName, listener }) => {
       if (eventName === emittedEventName) {
         listener();
       }
-    });
+    })
   },
   close: () => {},
-  assertQueue: async (queueName) => {
+  assertQueue: async queueName => {
     if (!queueName) {
       queueName = generateRandomQueueName();
     }
@@ -101,7 +102,7 @@ const createChannel = async () => ({
   assertExchange: async (exchangeName, type) => {
     let exchange;
 
-    switch (type) {
+    switch(type) {
       case 'fanout':
         exchange = createFanoutExchange();
         break;
@@ -127,12 +128,12 @@ const createChannel = async () => ({
       content,
       fields: {
         exchange: exchangeName,
-        routingKey,
+        routingKey
       },
-      properties: options,
+      properties: options
     };
 
-    for (const queueName of queueNames) {
+    for(const queueName of queueNames) {
       queues[queueName].add(message);
     }
   },
@@ -141,9 +142,9 @@ const createChannel = async () => ({
       content,
       fields: {
         exchange: '',
-        routingKey: queueName,
+        routingKey: queueName
       },
-      properties: { headers: headers || {} },
+      properties: { headers: headers || {} }
     });
   },
   get: async (queueName, { noAck } = {}) => {
@@ -154,25 +155,25 @@ const createChannel = async () => ({
     queues[queueName].addConsumer(consumer);
     return { consumerTag: queueName };
   },
-  cancel: async (consumerTag) => queues[consumerTag].stopConsume(),
+  cancel: async consumerTag => queues[consumerTag].stopConsume(),
   ack: async () => {},
   nack: async (message, allUpTo = false, requeue = true) => {
     if (requeue) {
       queues[message.fields.routingKey].add(message);
     }
   },
-  checkQueue: (queueName) => ({
+  checkQueue: queueName => ({
     queue: queueName,
-    messageCount: queues[queueName].getMessageCount(),
+    messageCount: queues[queueName].getMessageCount()
   }),
-  purgeQueue: (queueName) => queues[queueName].purge(),
+  purgeQueue: queueName => queues[queueName].purge()
 });
 
 const generateRandomQueueName = () => {
   const ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_';
   let res = 'amq.gen-';
-  for (let i = 0; i < 22; i++) {
-    res += ABC[Math.floor(Math.random() * ABC.length)];
+  for( let i=0; i<22; i++ ){
+    res += ABC[(Math.floor(Math.random() * ABC.length))];
   }
   return res;
 };
@@ -182,25 +183,25 @@ const credentials = {
     mechanism: 'PLAIN',
     response: () => '',
     username,
-    password,
+    password
   }),
   amqplain: (username, password) => ({
     mechanism: 'AMQPLAIN',
     response: () => '',
     username,
-    password,
+    password
   }),
   external: () => ({
     mechanism: 'EXTERNAL',
     response: () => '',
-  }),
-};
+  })
+}
 
 module.exports = {
   connect: async () => ({
     createChannel,
     on: () => {},
-    close: () => {},
+    close: () => {}
   }),
-  credentials,
+  credentials
 };
