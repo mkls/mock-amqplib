@@ -1,8 +1,6 @@
 const amqp = require('./main');
 
 const generateQueueName = () => `test-queue-${Math.random()}`;
-const generateExchangeName = () => `test-exchange-${Math.random()}`;
-const generateRoutingKey = () => `test-routing-key-${Math.random()}`;
 
 test('getting a single message from queue', async () => {
   const connection = await amqp.connect('some-random-uri');
