@@ -1,6 +1,8 @@
 const amqp = require('./main');
 
 const generateQueueName = () => `test-queue-${Math.random()}`;
+const generateExchangeName = () => `test-exchange-${Math.random()}`;
+const generateRoutingKey = () => `test-routing-key-${Math.random()}`;
 
 test('getting a single message from queue', async () => {
   const connection = await amqp.connect('some-random-uri');
@@ -311,4 +313,14 @@ test('ensure consuming messages works even is queues is asserted multiple times'
   await channel.sendToQueue(queueName, 2);
 
   expect(receivedMessages).toEqual([1, 2]);
+});
+
+test('emitting on a connection triggers on callbacks', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const listener = jest.fn();
+
+  connection.on('error', listener);
+  connection.emit('error');
+
+  expect(listener).toBeCalled();
 });

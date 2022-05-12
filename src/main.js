@@ -1,6 +1,7 @@
+const EventEmitter = require('events')
+
 const queues = {};
 const exchanges = {};
-const eventListeners = [];
 
 const createQueue = () => {
   let messages = [];
@@ -79,16 +80,7 @@ const createHeadersExchange = () => {
 };
 
 const createChannel = async () => ({
-  on: (eventName, listener) => {
-    eventListeners.push({ eventName, listener });
-  },
-  emit: emittedEventName => {
-    eventListeners.forEach(({ eventName, listener }) => {
-      if (eventName === emittedEventName) {
-        listener();
-      }
-    })
-  },
+  ...EventEmitter.prototype,
   close: () => {},
   assertQueue: async queueName => {
     if (!queueName) {
@@ -199,9 +191,12 @@ const credentials = {
 
 module.exports = {
   connect: async () => ({
+    ...EventEmitter.prototype,
     createChannel,
-    on: () => {},
-    close: () => {}
+    isConnected: true,
+    close: function () {
+      this.emit('close')
+    }
   }),
   credentials
 };
