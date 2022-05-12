@@ -341,3 +341,14 @@ test('promise race condition for publishing to another queue from consumer', asy
 
   expect(listener).toBeCalledTimes(2);
 });
+
+
+test('emitting on a connection triggers on callbacks', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const listener = jest.fn();
+
+  connection.on('error', listener);
+  connection.emit('error');
+
+  expect(listener).toBeCalled();
+});
