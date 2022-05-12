@@ -7,9 +7,9 @@ const createQueue = () => {
   let subscriber = null;
 
   return {
-    add: item => {
+    add: async item => {
       if (subscriber) {
-        subscriber(item);
+        await subscriber(item);
       } else {
         messages.push(item);
       }
@@ -138,7 +138,7 @@ const createChannel = async () => ({
     }
   },
   sendToQueue: async (queueName, content, { headers } = {}) => {
-    queues[queueName].add({
+    await queues[queueName].add({
       content,
       fields: {
         exchange: '',
