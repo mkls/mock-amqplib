@@ -54,6 +54,7 @@ const createDirectExchange = () => {
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
+      if (routingKey === "#") return bindings.map(binding => binding.targetQueue)
       const matchingBinding = bindings.find(binding => binding.pattern === routingKey);
       return [matchingBinding.targetQueue];
     }
