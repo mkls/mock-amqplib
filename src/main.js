@@ -1,15 +1,16 @@
+const EventEmitter = require('events')
+
 const queues = {};
 const exchanges = {};
-const eventListeners = [];
 
 const createQueue = () => {
   let messages = [];
   let subscriber = null;
 
   return {
-    add: item => {
+    add: async item => {
       if (subscriber) {
-        subscriber(item);
+        await subscriber(item);
       } else {
         messages.push(item);
       }
@@ -53,6 +54,7 @@ const createDirectExchange = () => {
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
+      if (routingKey === "#") return bindings.map(binding => binding.targetQueue)
       const matchingBinding = bindings.find(binding => binding.pattern === routingKey);
       return [matchingBinding.targetQueue];
     }
@@ -79,16 +81,7 @@ const createHeadersExchange = () => {
 };
 
 const createChannel = async () => ({
-  on: (eventName, listener) => {
-    eventListeners.push({ eventName, listener });
-  },
-  emit: emittedEventName => {
-    eventListeners.forEach(({ eventName, listener }) => {
-      if (eventName === emittedEventName) {
-        listener();
-      }
-    })
-  },
+  ...EventEmitter.prototype,
   close: () => {},
   assertQueue: async queueName => {
     if (!queueName) {
@@ -138,7 +131,7 @@ const createChannel = async () => ({
     }
   },
   sendToQueue: async (queueName, content, { headers } = {}) => {
-    queues[queueName].add({
+    await queues[queueName].add({
       content,
       fields: {
         exchange: '',
@@ -199,9 +192,12 @@ const credentials = {
 
 module.exports = {
   connect: async () => ({
+    ...EventEmitter.prototype,
     createChannel,
-    on: () => {},
-    close: () => {}
+    isConnected: true,
+    close: function () {
+      this.emit('close')
+    }
   }),
   credentials
 };

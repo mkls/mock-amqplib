@@ -312,3 +312,43 @@ test('ensure consuming messages works even is queues is asserted multiple times'
 
   expect(receivedMessages).toEqual([1, 2]);
 });
+
+test('promise race condition for publishing to another queue from consumer', async () => {
+
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+
+  const queueName = generateQueueName();
+  const errorQueueName = generateQueueName()
+
+  const listener = jest.fn().mockResolvedValue(true);
+
+  const cb = async () => {
+    await listener()
+    await channel.assertQueue(errorQueueName);
+    await channel.sendToQueue(errorQueueName)
+  }
+
+  await channel.assertQueue(queueName)
+  await channel.consume(queueName, cb);
+
+  await channel.assertQueue(errorQueueName)
+  await channel.consume(errorQueueName, listener);
+
+
+
+  await channel.sendToQueue(queueName, 2);
+
+  expect(listener).toBeCalledTimes(2);
+});
+
+
+test('emitting on a connection triggers on callbacks', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const listener = jest.fn();
+
+  connection.on('error', listener);
+  connection.emit('error');
+
+  expect(listener).toBeCalled();
+});
