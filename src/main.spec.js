@@ -314,7 +314,6 @@ test('ensure consuming messages works even is queues is asserted multiple times'
 });
 
 test('promise race condition for publishing to another queue from consumer', async () => {
-
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
 
@@ -334,8 +333,6 @@ test('promise race condition for publishing to another queue from consumer', asy
 
   await channel.assertQueue(errorQueueName)
   await channel.consume(errorQueueName, listener);
-
-
 
   await channel.sendToQueue(queueName, 2);
 
