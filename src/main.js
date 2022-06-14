@@ -1,4 +1,5 @@
 const EventEmitter = require('events')
+const util = require('util');
 
 const queues = {};
 const exchanges = {};
@@ -161,6 +162,16 @@ const createChannel = async () => ({
   purgeQueue: queueName => queues[queueName].purge()
 });
 
+const createConfirmChannel = async () => {
+  const basis = await createChannel();
+  return {
+    ...basis,
+    publish: util.callbackify(basis.publish),
+    sendToQueue: util.callbackify(basis.sendToQueue),
+    waitForConfirms: async () => {}
+  };
+};
+
 const generateRandomQueueName = () => {
   const ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_';
   let res = 'amq.gen-';
@@ -193,6 +204,7 @@ module.exports = {
   connect: async () => ({
     ...EventEmitter.prototype,
     createChannel,
+    createConfirmChannel,
     isConnected: true,
     close: function () {
       this.emit('close')
