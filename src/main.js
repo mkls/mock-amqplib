@@ -1,8 +1,7 @@
 const EventEmitter = require('events')
 const util = require('util');
 
-const queues = {};
-const exchanges = {};
+const DEFAULT_EXCHANGE_NAME = '';
 
 const createQueue = () => {
   let messages = [];
@@ -80,6 +79,11 @@ const createHeadersExchange = () => {
   };
 };
 
+const queues = {};
+const exchanges = {
+  [DEFAULT_EXCHANGE_NAME]: createDirectExchange()
+};
+
 const createChannel = async () => ({
   ...EventEmitter.prototype,
   close: () => {},
@@ -89,6 +93,8 @@ const createChannel = async () => ({
     }
     if (!(queueName in queues)) {
       queues[queueName] = createQueue();
+      const exchange = exchanges[DEFAULT_EXCHANGE_NAME];
+      exchange.bindQueue(queueName, queueName);
     }
     return { queue: queueName };
   },
