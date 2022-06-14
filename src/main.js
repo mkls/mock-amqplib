@@ -1,5 +1,4 @@
 const EventEmitter = require('events')
-const util = require('util');
 
 const DEFAULT_EXCHANGE_NAME = '';
 
@@ -135,6 +134,7 @@ const createChannel = async () => ({
     for(const queueName of queueNames) {
       queues[queueName].add(message);
     }
+    return true;
   },
   sendToQueue: async (queueName, content, { headers } = {}) => {
     await queues[queueName].add({
@@ -145,6 +145,7 @@ const createChannel = async () => ({
       },
       properties: { headers: headers || {} }
     });
+    return true;
   },
   get: async (queueName, { noAck } = {}) => {
     return queues[queueName].get();
@@ -172,8 +173,20 @@ const createConfirmChannel = async () => {
   const basis = await createChannel();
   return {
     ...basis,
-    publish: util.callbackify(basis.publish),
-    sendToQueue: util.callbackify(basis.sendToQueue),
+    publish: (exchange, routingKey, content, options, cb) => {
+      basis.publish(exchange, routingKey, content, options).then(
+          ret => process.nextTick(cb, null, ret),
+          rej => process.nextTick(cb, rej)
+      );
+      return true;
+    },
+    sendToQueue: (queue, content, options, cb) => {
+      basis.sendToQueue(queue, content, options).then(
+          ret => process.nextTick(cb, null, ret),
+          rej => process.nextTick(cb, rej)
+      );
+      return true;
+    },
     waitForConfirms: async () => {}
   };
 };
