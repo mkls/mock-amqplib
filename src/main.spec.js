@@ -97,6 +97,23 @@ test('purgeQueue deletes messages from queue', async () => {
   expect(message).toEqual(false);
 });
 
+test('default exchange', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  await channel.assertQueue('retry-queue-10s');
+  await channel.assertQueue('retry-queue-20s');
+  await channel.publish('', 'retry-queue-10s', 'content-1');
+
+  expect(await channel.get('retry-queue-10s')).toMatchObject({
+    content: 'content-1',
+    fields: {
+      exchange: '',
+      routingKey: 'retry-queue-10s'
+    }
+  });
+  expect(await channel.get('retry-queue-20s')).toEqual(false);
+});
+
 test('direct exchange', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
@@ -199,6 +216,35 @@ test('headers exchange', async () => {
   expect(await channel.get('retry-queue-20s')).toMatchObject({
     content: 'content-2'
   });
+});
+
+test('direct exchange via ConfirmChannel', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createConfirmChannel();
+  await channel.assertExchange('retry-exchange', 'direct');
+  await channel.assertQueue('retry-queue-10s');
+  await channel.assertQueue('retry-queue-20s');
+  await channel.bindQueue('retry-queue-10s', 'retry-exchange', 'some-target-queue');
+  await channel.bindQueue('retry-queue-20s', 'retry-exchange', 'some-other-queue');
+
+  await new Promise((resolve, reject) => {
+    channel.publish('retry-exchange', 'some-target-queue', 'content-1', (err, result) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(result);
+    });
+  });
+
+  expect(await channel.get('retry-queue-10s')).toMatchObject({
+    content: 'content-1',
+    fields: {
+      exchange: 'retry-exchange',
+      routingKey: 'some-target-queue'
+    }
+  });
+  expect(await channel.get('retry-queue-20s')).toEqual(false);
 });
 
 test('emitting on a channel triggers on callbacks', async () => {
