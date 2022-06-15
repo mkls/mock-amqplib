@@ -97,6 +97,23 @@ test('purgeQueue deletes messages from queue', async () => {
   expect(message).toEqual(false);
 });
 
+test('default exchange', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  await channel.assertQueue('retry-queue-10s');
+  await channel.assertQueue('retry-queue-20s');
+  await channel.publish('', 'retry-queue-10s', 'content-1');
+
+  expect(await channel.get('retry-queue-10s')).toMatchObject({
+    content: 'content-1',
+    fields: {
+      exchange: '',
+      routingKey: 'retry-queue-10s'
+    }
+  });
+  expect(await channel.get('retry-queue-20s')).toEqual(false);
+});
+
 test('direct exchange', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
