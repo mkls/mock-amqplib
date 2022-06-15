@@ -187,6 +187,43 @@ test('x-delayed-message exchange', async () => {
   expect(await channel.get('retry-queue-20s-options')).toEqual(false);
 });
 
+const routingKeys = [
+  'a1', '2b', '3c4', 'a1.2b', 'a1.3c4', 'a1.d', '2b.3c4', '2b.d', '3c4.d',
+  'a1.2b.3c4', 'a1.3c4.d', 'a1.2b.d', '2b.3c4.d', 'a1.2b.3c4.d'
+];
+const cases = [
+  { pattern: 'some.pattern',  result: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+  { pattern: 'a1.2b',         result: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+  { pattern: 'a1.*.*',        result: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0] },
+  { pattern: 'a1.*.#',        result: [0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 1] },
+  { pattern: '*.2b.*',        result: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0] },
+  { pattern: '#.3c4',         result: [0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0] },
+  { pattern: '#.*.#',         result: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+  { pattern: '#.#',           result: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+  { pattern: '#',             result: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+];
+test.each(cases)('topic exchange: $pattern', async (test) => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  await channel.assertExchange('retry-exchange', 'topic');
+  await channel.assertQueue('retry-queue-10s');
+  await channel.bindQueue('retry-queue-10s', 'retry-exchange', test.pattern);
+
+  for (const key of routingKeys) {
+    const i = routingKeys.indexOf(key);
+    await channel.publish('retry-exchange', key, 'content-1');
+    const expected = test.result[i] ? {
+      content: 'content-1',
+      fields: {
+        exchange: 'retry-exchange',
+        routingKey: key
+      },
+      properties: {}
+    } : false;
+    expect(await channel.get('retry-queue-10s')).toEqual(expected);
+  }
+});
+
 test('headers exchange', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
