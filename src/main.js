@@ -164,23 +164,57 @@ const createChannel = async () => ({
 });
 
 const createConfirmChannel = async () => {
-  const basis = await createChannel();
+  const basic = await createChannel();
+
+  // for waitForConfirms
+  const pendingPublishes = [];
+
+  const addPromise = async () => new Promise(outerResolve => {
+    let resolver, rejector;
+    const promise = new Promise((resolve, reject) => {
+      resolver = resolve;
+      rejector = reject;
+    });
+    pendingPublishes.push(promise);
+    setImmediate(() => {
+      outerResolve({ promise, resolver, rejector });
+    });
+  });
+
+  const handler = (func, ...args) => {
+    const cb = args[args.length - 1];
+    const params = args.slice(0, -1);
+    const promiseStaff = { promise: undefined, resolver: undefined, rejector: undefined };
+    addPromise()
+        .then(
+            ret => {
+              Object.assign(promiseStaff, ret);
+              func(...params); // main call
+            })
+        .then(
+            ret => {
+              promiseStaff.resolver && promiseStaff.resolver();
+              const i = pendingPublishes.indexOf(promiseStaff.promise);
+              pendingPublishes.splice(i, 1);
+              process.nextTick(cb, null, ret);
+            },
+            rej => {
+              promiseStaff.rejector && promiseStaff.rejector();
+              const i = pendingPublishes.indexOf(promiseStaff.promise);
+              pendingPublishes.splice(i, 1);
+              process.nextTick(cb, rej);
+            },
+        );
+    return true;
+  }
+
   return {
-    ...basis,
-    publish: (exchange, routingKey, content, options, cb) => {
-      basis.publish(exchange, routingKey, content, options).then(
-          ret => process.nextTick(cb, null, ret),
-          rej => process.nextTick(cb, rej)
-      );
-      return true;
-    },
-    sendToQueue: (queue, content, options, cb) => {
-      basis.sendToQueue(queue, content, options).then(
-          ret => process.nextTick(cb, null, ret),
-          rej => process.nextTick(cb, rej)
-      );
-      return true;
-    }
+    ...basic,
+    publish: (exchange, routingKey, content, options, cb) =>
+        handler(basic.publish, exchange, routingKey, content, options, cb),
+    sendToQueue: (queue, content, options, cb) =>
+        handler(basic.sendToQueue, queue, content, options, cb),
+    waitForConfirms: async () => Promise.all(pendingPublishes.slice())
   };
 };
 
