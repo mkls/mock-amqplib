@@ -60,6 +60,51 @@ const createDirectExchange = () => {
   };
 };
 
+const createTopicExchange = () => {
+  const bindings = [];
+  const maskToRegexp = mask => {
+    const words = mask.split('.');
+    const del = '\\.';
+    let strForRegexp = '^';
+    let moveDel = false;
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const first = i === 0;
+      const prefix = !first && !moveDel ? del : '';
+
+      moveDel = false;
+      if (word === '*') {
+        strForRegexp += `${prefix}\\w+`;
+      } else if (word === '#') {
+        if (first) {
+          moveDel = true;
+          strForRegexp += `(\\w+${del}?)*`;
+        } else {
+          strForRegexp += `(${prefix}${prefix && '?'}\\w+)*`;
+        }
+      } else {
+        strForRegexp += prefix + word;
+      }
+    }
+    strForRegexp += '$';
+    console.log('lol', mask, strForRegexp);
+    return new RegExp(strForRegexp);
+  }
+  return {
+    bindQueue: (queueName, pattern, options) => {
+      bindings.push({
+        targetQueue: queueName,
+        options,
+        pattern
+      });
+    },
+    getTargetQueues: (routingKey, options = {}) => {
+      const matchingBinding = bindings.filter(binding => maskToRegexp(binding.pattern).test(routingKey));
+      return matchingBinding.map(b => b.targetQueue);
+    }
+  };
+};
+
 const createHeadersExchange = () => {
   const bindings = [];
   return {
@@ -101,6 +146,9 @@ const createChannel = async () => ({
       case 'direct':
       case 'x-delayed-message':
         exchange = createDirectExchange();
+        break;
+      case 'topic':
+        exchange = createTopicExchange();
         break;
       case 'headers':
         exchange = createHeadersExchange();
