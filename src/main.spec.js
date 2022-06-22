@@ -100,18 +100,20 @@ test('purgeQueue deletes messages from queue', async () => {
 test('default exchange', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
-  await channel.assertQueue('retry-queue-10s');
-  await channel.assertQueue('retry-queue-20s');
-  await channel.publish('', 'retry-queue-10s', 'content-1');
+  const targetQueueName = generateQueueName();
+  const anotherQueueName = generateQueueName();
+  await channel.assertQueue(targetQueueName);
+  await channel.assertQueue(anotherQueueName);
+  await channel.publish('', targetQueueName, 'content-1');
 
-  expect(await channel.get('retry-queue-10s')).toMatchObject({
+  expect(await channel.get(targetQueueName)).toMatchObject({
     content: 'content-1',
     fields: {
       exchange: '',
-      routingKey: 'retry-queue-10s'
+      routingKey: targetQueueName
     }
   });
-  expect(await channel.get('retry-queue-20s')).toEqual(false);
+  expect(await channel.get(anotherQueueName)).toEqual(false);
 });
 
 test('direct exchange', async () => {
@@ -335,20 +337,19 @@ test('promise race condition for publishing to another queue from consumer', asy
   const channel = await connection.createChannel();
 
   const queueName = generateQueueName();
-  const errorQueueName = generateQueueName()
+  const errorQueueName = generateQueueName();
 
   const listener = jest.fn().mockResolvedValue(true);
 
   const cb = async () => {
-    await listener()
-    await channel.assertQueue(errorQueueName);
-    await channel.sendToQueue(errorQueueName)
+    await listener();
+    await channel.sendToQueue(errorQueueName);
   }
 
-  await channel.assertQueue(queueName)
-  await channel.consume(queueName, cb);
+  await channel.assertQueue(queueName);
+  await channel.assertQueue(errorQueueName);
 
-  await channel.assertQueue(errorQueueName)
+  await channel.consume(queueName, cb);
   await channel.consume(errorQueueName, listener);
 
   await channel.sendToQueue(queueName, 2);
