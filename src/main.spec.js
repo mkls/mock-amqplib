@@ -1,6 +1,7 @@
 const amqp = require('./main');
 
 const generateQueueName = () => `test-queue-${Math.random()}`;
+const generateExchangeName = () => `test-exchange-${Math.random()}`;
 
 test('getting a single message from queue', async () => {
   const connection = await amqp.connect('some-random-uri');
@@ -209,22 +210,24 @@ const cases = [
 test.each(cases)('topic exchange: $pattern', async (test) => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
-  await channel.assertExchange('retry-exchange', 'topic');
-  await channel.assertQueue('retry-queue-10s');
-  await channel.bindQueue('retry-queue-10s', 'retry-exchange', test.pattern);
+  const queueName = generateQueueName();
+  const exchangeName = generateExchangeName();
+  await channel.assertExchange(exchangeName, 'topic');
+  await channel.assertQueue(queueName);
+  await channel.bindQueue(queueName, exchangeName, test.pattern);
 
   for (const key of routingKeys) {
     const i = routingKeys.indexOf(key);
-    await channel.publish('retry-exchange', key, 'content-1');
+    await channel.publish(exchangeName, key, 'content-1');
     const expected = test.result[i] ? {
       content: 'content-1',
       fields: {
-        exchange: 'retry-exchange',
+        exchange: exchangeName,
         routingKey: key
       },
       properties: {}
     } : false;
-    expect(await channel.get('retry-queue-10s')).toEqual(expected);
+    expect(await channel.get(queueName)).toEqual(expected);
   }
 });
 

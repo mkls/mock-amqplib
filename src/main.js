@@ -86,7 +86,6 @@ const createTopicExchange = () => {
       }
     }
     strForRegexp += '$';
-    console.log('lol', mask, strForRegexp);
     return new RegExp(strForRegexp);
   }
   return {
@@ -94,11 +93,12 @@ const createTopicExchange = () => {
       bindings.push({
         targetQueue: queueName,
         options,
-        pattern
+        pattern,
+        patternRegexp: maskToRegexp(pattern)
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
-      const matchingBinding = bindings.filter(binding => maskToRegexp(binding.pattern).test(routingKey));
+      const matchingBinding = bindings.filter(binding => binding.patternRegexp.test(routingKey));
       return matchingBinding.map(b => b.targetQueue);
     }
   };
