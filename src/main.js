@@ -135,15 +135,8 @@ const createChannel = async () => ({
       queues[queueName].add(message);
     }
   },
-  sendToQueue: async (queueName, content, { headers } = {}) => {
-    await queues[queueName].add({
-      content,
-      fields: {
-        exchange: '',
-        routingKey: queueName
-      },
-      properties: { headers: headers || {} }
-    });
+  sendToQueue: async function (queueName, content, options = { headers: {} }) {
+    return this.publish(DEFAULT_EXCHANGE_NAME, queueName, content, options);
   },
   get: async (queueName, { noAck } = {}) => {
     return queues[queueName].get();
