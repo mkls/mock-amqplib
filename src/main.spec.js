@@ -1,6 +1,7 @@
 const amqp = require('./main');
 
 const generateQueueName = () => `test-queue-${Math.random()}`;
+const generateExchangeName = () => `test-exchange-${Math.random()}`;
 
 test('getting a single message from queue', async () => {
   const connection = await amqp.connect('some-random-uri');
@@ -204,14 +205,17 @@ test('headers exchange', async () => {
 test('direct exchange via ConfirmChannel', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createConfirmChannel();
-  await channel.assertExchange('retry-exchange', 'direct');
-  await channel.assertQueue('retry-queue-10s');
-  await channel.assertQueue('retry-queue-20s');
-  await channel.bindQueue('retry-queue-10s', 'retry-exchange', 'some-target-queue');
-  await channel.bindQueue('retry-queue-20s', 'retry-exchange', 'some-other-queue');
+  const targetQueueName = generateQueueName();
+  const anotherQueueName = generateQueueName();
+  const exchangeName = generateExchangeName();
+  await channel.assertExchange(exchangeName, 'direct');
+  await channel.assertQueue(targetQueueName);
+  await channel.assertQueue(anotherQueueName);
+  await channel.bindQueue(targetQueueName, exchangeName, 'some-target-queue');
+  await channel.bindQueue(anotherQueueName, exchangeName, 'some-other-queue');
 
   await new Promise((resolve, reject) => {
-    channel.publish('retry-exchange', 'some-target-queue', 'content-1', {}, (err, result) => {
+    channel.publish(exchangeName, 'some-target-queue', 'content-1', {}, (err, result) => {
       if (err) {
         reject(err);
         return;
@@ -220,14 +224,14 @@ test('direct exchange via ConfirmChannel', async () => {
     });
   });
 
-  expect(await channel.get('retry-queue-10s')).toMatchObject({
+  expect(await channel.get(targetQueueName)).toMatchObject({
     content: 'content-1',
     fields: {
-      exchange: 'retry-exchange',
+      exchange: exchangeName,
       routingKey: 'some-target-queue'
     }
   });
-  expect(await channel.get('retry-queue-20s')).toEqual(false);
+  expect(await channel.get(anotherQueueName)).toEqual(false);
 });
 
 test('emitting on a channel triggers on callbacks', async () => {

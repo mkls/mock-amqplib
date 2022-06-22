@@ -176,6 +176,7 @@ const createConfirmChannel = async () => {
       rejector = reject;
     });
     pendingPublishes.push(promise);
+    // setImmediate to make sure promise has finished his assignment task
     setImmediate(() => {
       outerResolve({ promise, resolver, rejector });
     });
@@ -186,11 +187,13 @@ const createConfirmChannel = async () => {
     const params = args.slice(0, -1);
     const promiseStaff = { promise: undefined, resolver: undefined, rejector: undefined };
     addPromise()
+        // get promise resolver/rejector and call main func
         .then(
             ret => {
               Object.assign(promiseStaff, ret);
               func(...params); // main call
             })
+        // resolve or reject, remove promise from array, callback call
         .then(
             ret => {
               promiseStaff.resolver && promiseStaff.resolver();
@@ -205,6 +208,7 @@ const createConfirmChannel = async () => {
               process.nextTick(cb, rej);
             },
         );
+    // to mimic stream.write behaviour
     return true;
   }
 
