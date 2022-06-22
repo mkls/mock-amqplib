@@ -108,6 +108,7 @@ const createChannel = async () => ({
     }
 
     exchanges[exchangeName] = exchange;
+    return { exchange: exchangeName };
   },
   bindQueue: async (queue, sourceExchange, pattern, options = {}) => {
     const exchange = exchanges[sourceExchange];
@@ -157,6 +158,9 @@ const createChannel = async () => ({
   checkQueue: queueName => ({
     queue: queueName,
     messageCount: queues[queueName].getMessageCount()
+  }),
+  checkExchange: async exchangeName => ({
+    exchange: exchangeName,
   }),
   purgeQueue: queueName => queues[queueName].purge()
 });
