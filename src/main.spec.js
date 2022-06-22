@@ -1,6 +1,7 @@
 const amqp = require('./main');
 
 const generateQueueName = () => `test-queue-${Math.random()}`;
+const generateExchangeName = () => `test-exchange-${Math.random()}`;
 
 test('getting a single message from queue', async () => {
   const connection = await amqp.connect('some-random-uri');
@@ -81,6 +82,18 @@ test('checkQueue return status for the queue', async () => {
     queue: queueName,
     messageCount: 2
   });
+});
+
+test('assertExchange and checkExchange return exchange name', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  const exchangeName = generateExchangeName();
+
+  const assertResult =  await channel.assertExchange(exchangeName, 'direct');
+  const checkResult =  await channel.checkExchange(exchangeName);
+
+  expect(assertResult).toEqual({ exchange: exchangeName });
+  expect(checkResult).toEqual(assertResult);
 });
 
 test('purgeQueue deletes messages from queue', async () => {
