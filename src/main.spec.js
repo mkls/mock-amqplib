@@ -84,6 +84,18 @@ test('checkQueue return status for the queue', async () => {
   });
 });
 
+test('assertExchange and checkExchange return exchange name', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  const exchangeName = generateExchangeName();
+
+  const assertResult =  await channel.assertExchange(exchangeName, 'direct');
+  const checkResult =  await channel.checkExchange(exchangeName);
+
+  expect(assertResult).toEqual({ exchange: exchangeName });
+  expect(checkResult).toEqual(assertResult);
+});
+
 test('purgeQueue deletes messages from queue', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
