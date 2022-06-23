@@ -183,6 +183,7 @@ const createChannel = async () => ({
     for(const queueName of queueNames) {
       queues[queueName].add(message);
     }
+    return true;
   },
   sendToQueue: async function (queueName, content, options = { headers: {} }) {
     return this.publish(DEFAULT_EXCHANGE_NAME, queueName, content, options);
@@ -211,6 +212,65 @@ const createChannel = async () => ({
   }),
   purgeQueue: queueName => queues[queueName].purge()
 });
+
+const createConfirmChannel = async () => {
+  const basic = await createChannel();
+
+  // for waitForConfirms
+  const pendingPublishes = [];
+
+  const addPromise = async () => new Promise(outerResolve => {
+    let resolver, rejector;
+    const promise = new Promise((resolve, reject) => {
+      resolver = resolve;
+      rejector = reject;
+    });
+    pendingPublishes.push(promise);
+    // setImmediate to make sure promise has finished his assignment task
+    setImmediate(() => {
+      outerResolve({ promise, resolver, rejector });
+    });
+  });
+
+  const handler = (func, ...args) => {
+    const cb = args[args.length - 1];
+    const params = args.slice(0, -1);
+    const promiseStaff = { promise: undefined, resolver: undefined, rejector: undefined };
+    addPromise()
+        // get promise resolver/rejector and call main func
+        .then(
+            ret => {
+              Object.assign(promiseStaff, ret);
+              func(...params); // main call
+            })
+        // resolve or reject, remove promise from array, callback call
+        .then(
+            ret => {
+              promiseStaff.resolver && promiseStaff.resolver();
+              const i = pendingPublishes.indexOf(promiseStaff.promise);
+              pendingPublishes.splice(i, 1);
+              process.nextTick(cb, null, ret);
+            },
+            rej => {
+              promiseStaff.rejector && promiseStaff.rejector();
+              const i = pendingPublishes.indexOf(promiseStaff.promise);
+              pendingPublishes.splice(i, 1);
+              process.nextTick(cb, rej);
+            },
+        );
+    // to mimic stream.write behaviour
+    return true;
+  }
+
+  return {
+    ...basic,
+    publish: (exchange, routingKey, content, options, cb) =>
+        handler(basic.publish, exchange, routingKey, content, options, cb),
+    sendToQueue: (queue, content, options, cb) =>
+        handler(basic.sendToQueue, queue, content, options, cb),
+    waitForConfirms: async () => Promise.all(pendingPublishes.slice())
+  };
+};
 
 const generateRandomQueueName = () => {
   const ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_';
@@ -244,6 +304,7 @@ module.exports = {
   connect: async () => ({
     ...EventEmitter.prototype,
     createChannel,
+    createConfirmChannel,
     isConnected: true,
     close: function () {
       this.emit('close')

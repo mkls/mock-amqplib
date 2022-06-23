@@ -276,6 +276,38 @@ test('headers exchange', async () => {
   });
 });
 
+test('direct exchange via ConfirmChannel', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createConfirmChannel();
+  const targetQueueName = generateQueueName();
+  const anotherQueueName = generateQueueName();
+  const exchangeName = generateExchangeName();
+  await channel.assertExchange(exchangeName, 'direct');
+  await channel.assertQueue(targetQueueName);
+  await channel.assertQueue(anotherQueueName);
+  await channel.bindQueue(targetQueueName, exchangeName, 'some-target-queue');
+  await channel.bindQueue(anotherQueueName, exchangeName, 'some-other-queue');
+
+  await new Promise((resolve, reject) => {
+    channel.publish(exchangeName, 'some-target-queue', 'content-1', {}, (err, result) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(result);
+    });
+  });
+
+  expect(await channel.get(targetQueueName)).toMatchObject({
+    content: 'content-1',
+    fields: {
+      exchange: exchangeName,
+      routingKey: 'some-target-queue'
+    }
+  });
+  expect(await channel.get(anotherQueueName)).toEqual(false);
+});
+
 test('emitting on a channel triggers on callbacks', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
