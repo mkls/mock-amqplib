@@ -84,6 +84,18 @@ test('checkQueue return status for the queue', async () => {
   });
 });
 
+test('assertExchange and checkExchange return exchange name', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  const exchangeName = generateExchangeName();
+
+  const assertResult =  await channel.assertExchange(exchangeName, 'direct');
+  const checkResult =  await channel.checkExchange(exchangeName);
+
+  expect(assertResult).toEqual({ exchange: exchangeName });
+  expect(checkResult).toEqual(assertResult);
+});
+
 test('purgeQueue deletes messages from queue', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
@@ -96,6 +108,25 @@ test('purgeQueue deletes messages from queue', async () => {
 
   const message = await channel.get(queueName);
   expect(message).toEqual(false);
+});
+
+test('default exchange', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  const targetQueueName = generateQueueName();
+  const anotherQueueName = generateQueueName();
+  await channel.assertQueue(targetQueueName);
+  await channel.assertQueue(anotherQueueName);
+  await channel.publish('', targetQueueName, 'content-1');
+
+  expect(await channel.get(targetQueueName)).toMatchObject({
+    content: 'content-1',
+    fields: {
+      exchange: '',
+      routingKey: targetQueueName
+    }
+  });
+  expect(await channel.get(anotherQueueName)).toEqual(false);
 });
 
 test('direct exchange', async () => {
@@ -167,6 +198,49 @@ test('x-delayed-message exchange', async () => {
     }
   });
   expect(await channel.get('retry-queue-20s-options')).toEqual(false);
+});
+
+const routingKeys = [
+  'a1', '2b', '3c4', 'a1.2b', 'a1.3c4', 'a1.d', '2b.3c4', '2b.d', '3c4.d',
+  'a1.2b.3c4', 'a1.3c4.d', 'a1.2b.d', '2b.3c4.d', 'a1.2b.3c4.d'
+];
+const cases = [
+  { pattern: 'some.pattern',  result: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+  { pattern: 'a1.2b',         result: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+  { pattern: 'a1.*.*',        result: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0] },
+  { pattern: 'a1.*.#',        result: [0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 1] },
+  { pattern: '*.2b.*',        result: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0] },
+  { pattern: '#.3c4',         result: [0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0] },
+  { pattern: '*.#.d',         result: [0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1] },
+  { pattern: '*',             result: [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+  { pattern: '*.#.*',         result: [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+  { pattern: '#.*.*.#',       result: [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+  { pattern: '#.*',           result: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+  { pattern: '#.#.#',         result: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+  { pattern: '#',             result: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+];
+test.each(cases)('topic exchange: $pattern', async (test) => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  const queueName = generateQueueName();
+  const exchangeName = generateExchangeName();
+  await channel.assertExchange(exchangeName, 'topic');
+  await channel.assertQueue(queueName);
+  await channel.bindQueue(queueName, exchangeName, test.pattern);
+
+  for (const key of routingKeys) {
+    const i = routingKeys.indexOf(key);
+    await channel.publish(exchangeName, key, 'content-1');
+    const expected = test.result[i] ? {
+      content: 'content-1',
+      fields: {
+        exchange: exchangeName,
+        routingKey: key
+      },
+      properties: {}
+    } : false;
+    expect(await channel.get(queueName)).toEqual(expected);
+  }
 });
 
 test('headers exchange', async () => {
@@ -351,20 +425,19 @@ test('promise race condition for publishing to another queue from consumer', asy
   const channel = await connection.createChannel();
 
   const queueName = generateQueueName();
-  const errorQueueName = generateQueueName()
+  const errorQueueName = generateQueueName();
 
   const listener = jest.fn().mockResolvedValue(true);
 
   const cb = async () => {
-    await listener()
-    await channel.assertQueue(errorQueueName);
-    await channel.sendToQueue(errorQueueName)
+    await listener();
+    await channel.sendToQueue(errorQueueName);
   }
 
-  await channel.assertQueue(queueName)
-  await channel.consume(queueName, cb);
+  await channel.assertQueue(queueName);
+  await channel.assertQueue(errorQueueName);
 
-  await channel.assertQueue(errorQueueName)
+  await channel.consume(queueName, cb);
   await channel.consume(errorQueueName, listener);
 
   await channel.sendToQueue(queueName, 2);

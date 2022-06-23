@@ -1,7 +1,6 @@
 const EventEmitter = require('events')
 
-const queues = {};
-const exchanges = {};
+const DEFAULT_EXCHANGE_NAME = '';
 
 const createQueue = () => {
   let messages = [];
@@ -60,6 +59,51 @@ const createDirectExchange = () => {
   };
 };
 
+const createTopicExchange = () => {
+  const bindings = [];
+  const maskToRegexp = mask => {
+    const words = mask.split('.');
+    const del = '\\.';
+    let strForRegexp = '^';
+    let moveDel = false;
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const first = i === 0;
+      const prefix = !first && !moveDel ? del : '';
+
+      moveDel = false;
+      if (word === '*') {
+        strForRegexp += `${prefix}\\w+`;
+      } else if (word === '#') {
+        if (first) {
+          moveDel = true;
+          strForRegexp += `(\\w+${del}?)*`;
+        } else {
+          strForRegexp += `(${prefix}${prefix && '?'}\\w+)*`;
+        }
+      } else {
+        strForRegexp += prefix + word;
+      }
+    }
+    strForRegexp += '$';
+    return new RegExp(strForRegexp);
+  }
+  return {
+    bindQueue: (queueName, pattern, options) => {
+      bindings.push({
+        targetQueue: queueName,
+        options,
+        pattern,
+        patternRegexp: maskToRegexp(pattern)
+      });
+    },
+    getTargetQueues: (routingKey, options = {}) => {
+      const matchingBinding = bindings.filter(binding => binding.patternRegexp.test(routingKey));
+      return matchingBinding.map(b => b.targetQueue);
+    }
+  };
+};
+
 const createHeadersExchange = () => {
   const bindings = [];
   return {
@@ -79,6 +123,11 @@ const createHeadersExchange = () => {
   };
 };
 
+const queues = {};
+const exchanges = {
+  [DEFAULT_EXCHANGE_NAME]: createDirectExchange()
+};
+
 const createChannel = async () => ({
   ...EventEmitter.prototype,
   close: () => {},
@@ -88,6 +137,8 @@ const createChannel = async () => ({
     }
     if (!(queueName in queues)) {
       queues[queueName] = createQueue();
+      const exchange = exchanges[DEFAULT_EXCHANGE_NAME];
+      exchange.bindQueue(queueName, queueName);
     }
     return { queue: queueName };
   },
@@ -102,12 +153,16 @@ const createChannel = async () => ({
       case 'x-delayed-message':
         exchange = createDirectExchange();
         break;
+      case 'topic':
+        exchange = createTopicExchange();
+        break;
       case 'headers':
         exchange = createHeadersExchange();
         break;
     }
 
     exchanges[exchangeName] = exchange;
+    return { exchange: exchangeName };
   },
   bindQueue: async (queue, sourceExchange, pattern, options = {}) => {
     const exchange = exchanges[sourceExchange];
@@ -130,16 +185,8 @@ const createChannel = async () => ({
     }
     return true;
   },
-  sendToQueue: async (queueName, content, { headers } = {}) => {
-    await queues[queueName].add({
-      content,
-      fields: {
-        exchange: '',
-        routingKey: queueName
-      },
-      properties: { headers: headers || {} }
-    });
-    return true;
+  sendToQueue: async function (queueName, content, options = { headers: {} }) {
+    return this.publish(DEFAULT_EXCHANGE_NAME, queueName, content, options);
   },
   get: async (queueName, { noAck } = {}) => {
     return queues[queueName].get();
@@ -159,6 +206,9 @@ const createChannel = async () => ({
   checkQueue: queueName => ({
     queue: queueName,
     messageCount: queues[queueName].getMessageCount()
+  }),
+  checkExchange: async exchangeName => ({
+    exchange: exchangeName,
   }),
   purgeQueue: queueName => queues[queueName].purge()
 });
