@@ -83,7 +83,7 @@ const createFanoutExchange = () => {
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
-      return [...bindings.map(binding => binding.targetQueue)];
+      return bindings.map(b => b.targetQueue);
     }
   };
 };
@@ -98,10 +98,8 @@ const createDirectExchange = () => {
         pattern
       });
     },
-    getTargetQueues: (routingKey, options = {}) => {
-      const matchingBinding = bindings.find(binding => binding.pattern === routingKey);
-      return [matchingBinding.targetQueue];
-    }
+    getTargetQueues: (routingKey, options = {}) =>
+      bindings.filter(b => b.pattern === routingKey).map(b => b.targetQueue)
   };
 };
 
@@ -143,10 +141,8 @@ const createTopicExchange = () => {
         patternRegexp: maskToRegexp(pattern)
       });
     },
-    getTargetQueues: (routingKey, options = {}) => {
-      const matchingBinding = bindings.filter(binding => binding.patternRegexp.test(routingKey));
-      return matchingBinding.map(b => b.targetQueue);
-    }
+    getTargetQueues: (routingKey, options = {}) =>
+      bindings.filter(b => b.patternRegexp.test(routingKey)).map(b => b.targetQueue)
   };
 };
 
@@ -161,10 +157,9 @@ const createHeadersExchange = () => {
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
-      const isMatching = (binding, headers) =>
+      const isMatching = (binding, headers = {}) =>
         Object.keys(binding.options).every(key => binding.options[key] === headers[key]);
-      const matchingBinding = bindings.find(binding => isMatching(binding, options.headers || {}));
-      return [matchingBinding.targetQueue];
+      return bindings.filter(b => isMatching(b, options.headers)).map(b => b.targetQueue);
     }
   };
 };
