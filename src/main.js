@@ -265,9 +265,9 @@ const createConfirmChannel = async () => {
   return {
     ...basic,
     publish: (exchange, routingKey, content, options, cb) =>
-        handler(basic.publish, exchange, routingKey, content, options, cb),
+        handler(basic.publish.bind(basic), exchange, routingKey, content, options, cb),
     sendToQueue: (queue, content, options, cb) =>
-        handler(basic.sendToQueue, queue, content, options, cb),
+        handler(basic.sendToQueue.bind(basic), queue, content, options, cb),
     waitForConfirms: async () => Promise.all(pendingPublishes.slice())
   };
 };
