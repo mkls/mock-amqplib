@@ -288,15 +288,15 @@ const createChannel = async () => ({
     return { consumerTag: queueName };
   },
   cancel: async consumerTag => queues[consumerTag].stopConsume(),
-  ack: async () => {},
-  nack: async function (message, allUpTo = false, requeue = true) {
+  ack: () => {},
+  nack: function (message, allUpTo = false, requeue = true) {
     if (requeue) {
       queues[message[queueNameSymbol]].add(message);
     } else {
       deadLetterProceed(this, message, 'rejected');
     }
   },
-  checkQueue: queueName => ({
+  checkQueue: async queueName => ({
     queue: queueName,
     messageCount: queues[queueName].getMessageCount()
   }),

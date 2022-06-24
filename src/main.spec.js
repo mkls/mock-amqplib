@@ -60,7 +60,7 @@ test('nackinkg a message puts it back to queue', async () => {
   const message = await channel.get(queueName);
   const afterRead = await channel.get(queueName);
 
-  await channel.nack(message);
+  channel.nack(message);
 
   const reRead = await channel.get(queueName);
 
@@ -374,7 +374,7 @@ it('should not put nack-ed messages back to queue if requeue is set to false', a
   await channel.sendToQueue(queueName, 'test-content');
 
   const message = await channel.get(queueName);
-  await channel.nack(message, false, false);
+  channel.nack(message, false, false);
 
   const reRead = await channel.get(queueName);
 
