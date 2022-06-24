@@ -1,28 +1,74 @@
 const EventEmitter = require('events')
 
 const DEFAULT_EXCHANGE_NAME = '';
+const queueNameSymbol = Symbol('queueNameSymbol');
+const deadLetterHandler = Symbol('deadLetterHandler');
 
-const createQueue = () => {
+const createQueue = (options, channel) => {
   let messages = [];
   let subscriber = null;
+  const getTtl = () => {
+    if (
+        options &&
+        options.arguments &&
+        !isNaN(Number(options.arguments['x-message-ttl']))
+    ) {
+      return Number(options.arguments['x-message-ttl']);
+    }
+    return undefined;
+  };
+  const clearExpiration = msg => {
+    if (msg && msg.fields) {
+      clearTimeout(msg[deadLetterHandler]);
+      delete msg[deadLetterHandler];
+    }
+    return msg;
+  };
+  const setExpiration = msg => {
+    const msgTtl = Number(msg.properties.expiration);
+    const queueTtl = getTtl();
+    const ttl = msgTtl >= 0 && queueTtl >= 0 ? Math.min(msgTtl, queueTtl)
+        : msgTtl >= 0 ? msgTtl
+            : queueTtl >= 0 ? queueTtl
+                : undefined;
+
+    if (ttl >= 0) {
+      msg[deadLetterHandler] = setTimeout(() => {
+        const index = messages.indexOf(msg);
+        messages.splice(index, 1);
+        deadLetterProceed(channel, clearExpiration(msg), 'expired', ttl === msgTtl);
+      }, ttl);
+    }
+    return msg;
+  };
 
   return {
     add: async item => {
       if (subscriber) {
         await subscriber(item);
       } else {
-        messages.push(item);
+        messages.push(setExpiration(item));
       }
     },
-    get: () => messages.shift() || false,
+    get: () => clearExpiration(messages.shift()) || false,
     addConsumer: consumer => {
-      messages.forEach(item => consumer(item));
+      messages.forEach(item => consumer(clearExpiration(item)));
       messages = [];
       subscriber = consumer;
     },
     stopConsume: () => (subscriber = null),
     getMessageCount: () => messages.length,
-    purge: () => (messages = [])
+    purge: () => (messages = []),
+    getDeadLetterInfo: () => {
+      if (options && options.arguments) {
+        const {
+          'x-dead-letter-exchange': exchange,
+          'x-dead-letter-routing-key': routingKey,
+        } = options.arguments;
+        return { exchange, routingKey };
+      }
+      return {};
+    },
   };
 };
 
@@ -125,18 +171,62 @@ const createHeadersExchange = () => {
 
 const queues = {};
 const exchanges = {
-  [DEFAULT_EXCHANGE_NAME]: createDirectExchange()
+  [DEFAULT_EXCHANGE_NAME]: createDirectExchange(),
+};
+
+const deadLetterProceed = (channel, message, reason, perMessageTtl = false) => {
+  const queueName = message[queueNameSymbol];
+  const {
+    exchange: dlExchange,
+    routingKey: dlRoutingKey = message.fields.routingKey,
+  } = queues[queueName].getDeadLetterInfo();
+  if (dlExchange === undefined) {
+    return;
+  }
+  const msg = { ...message };
+
+  if (!msg.properties.headers) {
+    msg.properties.headers = {};
+  }
+  if (!msg.properties.headers['x-death']) {
+    msg.properties.headers['x-death'] = [];
+  }
+  if (!msg.properties.headers['x-first-death-reason']) {
+    msg.properties.headers['x-first-death-reason'] = reason;
+    msg.properties.headers['x-first-death-queue'] = queueName;
+    msg.properties.headers['x-first-death-exchange'] = msg.fields.exchange;
+  }
+
+  const dlEntry = {
+    queue: queueName,
+    reason,
+    time: Date.now(),
+    exchange: msg.fields.exchange,
+    'routing-keys': msg.fields.routingKey,
+    count: msg.properties.headers['x-death'].filter(
+      v => v.queue === queueName && v.reason === reason
+    ).length,
+  };
+
+  if (reason === 'expired' && perMessageTtl) {
+    dlEntry['original-expiration'] = msg.properties.expiration;
+    delete msg.properties.expiration;
+  }
+
+  msg.properties.headers['x-death'].unshift(dlEntry);
+
+  channel.publish(dlExchange, dlRoutingKey, msg.content, msg.properties);
 };
 
 const createChannel = async () => ({
   ...EventEmitter.prototype,
   close: () => {},
-  assertQueue: async queueName => {
+  assertQueue: async function (queueName, options) {
     if (!queueName) {
       queueName = generateRandomQueueName();
     }
     if (!(queueName in queues)) {
-      queues[queueName] = createQueue();
+      queues[queueName] = createQueue(options, this);
       const exchange = exchanges[DEFAULT_EXCHANGE_NAME];
       exchange.bindQueue(queueName, queueName);
     }
@@ -181,6 +271,7 @@ const createChannel = async () => ({
     };
 
     for(const queueName of queueNames) {
+      message[queueNameSymbol] = queueName;
       queues[queueName].add(message);
     }
     return true;
@@ -198,9 +289,11 @@ const createChannel = async () => ({
   },
   cancel: async consumerTag => queues[consumerTag].stopConsume(),
   ack: async () => {},
-  nack: async (message, allUpTo = false, requeue = true) => {
+  nack: async function (message, allUpTo = false, requeue = true) {
     if (requeue) {
-      queues[message.fields.routingKey].add(message);
+      queues[message[queueNameSymbol]].add(message);
+    } else {
+      deadLetterProceed(this, message, 'rejected');
     }
   },
   checkQueue: queueName => ({
