@@ -12,7 +12,7 @@ test('getting a single message from queue', async () => {
   const queueName = generateQueueName();
   await channel.assertQueue(queueName, { durable: true });
 
-  await channel.sendToQueue(queueName, 'test-content', {
+  channel.sendToQueue(queueName, 'test-content', {
     headers: { groupBy: 'groupness' }
   });
 
@@ -35,16 +35,16 @@ test('consuming messages', async () => {
   await channel.assertQueue(queueName, { durable: true });
   const consumer = jest.fn();
 
-  await channel.sendToQueue(queueName, 'test-message-1');
+  channel.sendToQueue(queueName, 'test-message-1');
 
   await channel.prefetch(10);
   const { consumerTag } = await channel.consume(queueName, consumer);
 
-  await channel.sendToQueue(queueName, 'test-message-2');
+  channel.sendToQueue(queueName, 'test-message-2');
 
   await channel.cancel(consumerTag);
 
-  await channel.sendToQueue(queueName, 'test-message-3');
+  channel.sendToQueue(queueName, 'test-message-3');
 
   expect(consumer.mock.calls).toMatchObject([
     [{ content: 'test-message-1', properties: { headers: expect.anything() } }],
@@ -58,7 +58,7 @@ test('nackinkg a message puts it back to queue', async () => {
   const queueName = generateQueueName();
   await channel.assertQueue(queueName, { durable: true });
 
-  await channel.sendToQueue(queueName, 'test-content');
+  channel.sendToQueue(queueName, 'test-content');
 
   const message = await channel.get(queueName);
   const afterRead = await channel.get(queueName);
@@ -76,8 +76,8 @@ test('checkQueue return status for the queue', async () => {
   const channel = await connection.createChannel();
   const queueName = generateQueueName();
   await channel.assertQueue(queueName, { durable: true });
-  await channel.sendToQueue(queueName, 'test-content-1');
-  await channel.sendToQueue(queueName, 'test-content-2');
+  channel.sendToQueue(queueName, 'test-content-1');
+  channel.sendToQueue(queueName, 'test-content-2');
 
   const status = await channel.checkQueue(queueName);
 
@@ -104,8 +104,8 @@ test('purgeQueue deletes messages from queue', async () => {
   const channel = await connection.createChannel();
   const queueName = generateQueueName();
   await channel.assertQueue(queueName, { durable: true });
-  await channel.sendToQueue(queueName, 'test-content-1');
-  await channel.sendToQueue(queueName, 'test-content-2');
+  channel.sendToQueue(queueName, 'test-content-1');
+  channel.sendToQueue(queueName, 'test-content-2');
 
   await channel.purgeQueue(queueName);
 
@@ -359,7 +359,7 @@ test('it should always set header property of messages even if not set', async (
   const queueName = generateQueueName();
   await channel.assertQueue(queueName);
 
-  await channel.sendToQueue(queueName, 'test-content');
+  channel.sendToQueue(queueName, 'test-content');
 
   const message = await channel.get(queueName);
 
@@ -377,7 +377,7 @@ it('should not put nack-ed messages back to queue if requeue is set to false', a
   const queueName = generateQueueName();
   await channel.assertQueue(queueName);
 
-  await channel.sendToQueue(queueName, 'test-content');
+  channel.sendToQueue(queueName, 'test-content');
 
   const message = await channel.get(queueName);
   channel.nack(message, false, false);
@@ -447,9 +447,9 @@ test('ensure consuming messages works even is queues is asserted multiple times'
   });
 
   await channel.assertQueue(queueName);
-  await channel.sendToQueue(queueName, 1);
+  channel.sendToQueue(queueName, 1);
   await channel.assertQueue(queueName);
-  await channel.sendToQueue(queueName, 2);
+  channel.sendToQueue(queueName, 2);
 
   expect(receivedMessages).toEqual([1, 2]);
 });
@@ -465,7 +465,7 @@ test('promise race condition for publishing to another queue from consumer', asy
 
   const cb = async () => {
     await listener();
-    await channel.sendToQueue(errorQueueName);
+    channel.sendToQueue(errorQueueName);
   }
 
   await channel.assertQueue(queueName);
@@ -474,8 +474,9 @@ test('promise race condition for publishing to another queue from consumer', asy
   await channel.consume(queueName, cb);
   await channel.consume(errorQueueName, listener);
 
-  await channel.sendToQueue(queueName, 2);
+  channel.sendToQueue(queueName, 2);
 
+  await sleep(0);
   expect(listener).toBeCalledTimes(2);
 });
 
@@ -511,7 +512,7 @@ test.each(ttlCases)(`should receive=$result message when message TTL=$msgTtl and
   const publishOptions = test.msgTtl >= 0 ? {
     expiration: test.msgTtl,
   } : undefined;
-  await channel.sendToQueue(queueName, 'test-content', publishOptions);
+  channel.sendToQueue(queueName, 'test-content', publishOptions);
   await sleep(test.wait);
 
   const message = await channel.get(queueName);
@@ -547,7 +548,7 @@ test.each(dlxCases)('should route message with TTL=$msgTtl to queue ' +
   const publishOptions = test.msgTtl >= 0 ? {
     expiration: test.msgTtl,
   } : undefined;
-  await channel.sendToQueue(queues[0], 'test-content', publishOptions);
+  channel.sendToQueue(queues[0], 'test-content', publishOptions);
   await sleep(test.wait);
 
   for (let i = 0; i < queues.length; i++) {
@@ -574,7 +575,7 @@ test('should route to DLX after nack (requeue=false)', async () => {
   });
   await channel.assertQueue(targetQueue);
   await channel.bindQueue(targetQueue, exchange, routingKey);
-  await channel.sendToQueue(nackQueue, 'test-content');
+  channel.sendToQueue(nackQueue, 'test-content');
 
   const message = await channel.get(nackQueue);
   expect(message).toBeTruthy();

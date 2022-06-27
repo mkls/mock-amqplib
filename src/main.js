@@ -253,7 +253,7 @@ const createChannel = async () => ({
     const exchange = exchanges[sourceExchange];
     exchange.bindQueue(queue, pattern, options);
   },
-  publish: async (exchangeName, routingKey, content, options = {}) => {
+  publish: (exchangeName, routingKey, content, options = {}) => {
     const exchange = exchanges[exchangeName];
     const queueNames = exchange.getTargetQueues(routingKey, options);
     const message = {
@@ -271,8 +271,8 @@ const createChannel = async () => ({
     }
     return true;
   },
-  sendToQueue: async function (queueName, content, options = { headers: {} }, cb = () => {}) {
-    return this.publish(DEFAULT_EXCHANGE_NAME, queueName, content, options, cb);
+  sendToQueue: function (queueName, content, options = { headers: {} }) {
+    return this.publish(DEFAULT_EXCHANGE_NAME, queueName, content, options);
   },
   get: async (queueName, { noAck } = {}) => {
     return queues[queueName].get();
