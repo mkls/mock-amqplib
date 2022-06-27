@@ -1,4 +1,4 @@
-const EventEmitter = require('events')
+const EventEmitter = require('events');
 
 const DEFAULT_EXCHANGE_NAME = '';
 const queueNameSymbol = Symbol('queueNameSymbol');
@@ -72,7 +72,7 @@ const createQueue = (options, channel) => {
   };
 };
 
-const createFanoutExchange = () => {
+const createFanoutExchange = options => {
   const bindings = [];
   return {
     bindQueue: (queueName, pattern, options) => {
@@ -84,11 +84,12 @@ const createFanoutExchange = () => {
     },
     getTargetQueues: (routingKey, options = {}) => {
       return bindings.map(b => b.targetQueue);
-    }
+    },
+    getOptions: () => options,
   };
 };
 
-const createDirectExchange = () => {
+const createDirectExchange = options => {
   const bindings = [];
   return {
     bindQueue: (queueName, pattern, options) => {
@@ -99,11 +100,12 @@ const createDirectExchange = () => {
       });
     },
     getTargetQueues: (routingKey, options = {}) =>
-      bindings.filter(b => b.pattern === routingKey).map(b => b.targetQueue)
+      bindings.filter(b => b.pattern === routingKey).map(b => b.targetQueue),
+    getOptions: () => options,
   };
 };
 
-const createTopicExchange = () => {
+const createTopicExchange = options => {
   const bindings = [];
   const maskToRegexp = mask => {
     const words = mask.split('.');
@@ -142,11 +144,12 @@ const createTopicExchange = () => {
       });
     },
     getTargetQueues: (routingKey, options = {}) =>
-      bindings.filter(b => b.patternRegexp.test(routingKey)).map(b => b.targetQueue)
+      bindings.filter(b => b.patternRegexp.test(routingKey)).map(b => b.targetQueue),
+    getOptions: () => options,
   };
 };
 
-const createHeadersExchange = () => {
+const createHeadersExchange = options => {
   const bindings = [];
   return {
     bindQueue: (queueName, pattern, options) => {
@@ -160,13 +163,14 @@ const createHeadersExchange = () => {
       const isMatching = (binding, headers = {}) =>
         Object.keys(binding.options).every(key => binding.options[key] === headers[key]);
       return bindings.filter(b => isMatching(b, options.headers)).map(b => b.targetQueue);
-    }
+    },
+    getOptions: () => options,
   };
 };
 
 const queues = {};
 const exchanges = {
-  [DEFAULT_EXCHANGE_NAME]: createDirectExchange(),
+  [DEFAULT_EXCHANGE_NAME]: createDirectExchange({}),
 };
 
 const deadLetterProceed = (channel, message, reason, perMessageTtl = false) => {
@@ -227,22 +231,22 @@ const createChannel = async () => ({
     }
     return { queue: queueName };
   },
-  assertExchange: async (exchangeName, type) => {
+  assertExchange: async (exchangeName, type, options = {}) => {
     let exchange;
 
     switch(type) {
       case 'fanout':
-        exchange = createFanoutExchange();
+        exchange = createFanoutExchange(options);
         break;
       case 'direct':
       case 'x-delayed-message':
-        exchange = createDirectExchange();
+        exchange = createDirectExchange(options);
         break;
       case 'topic':
-        exchange = createTopicExchange();
+        exchange = createTopicExchange(options);
         break;
       case 'headers':
-        exchange = createHeadersExchange();
+        exchange = createHeadersExchange(options);
         break;
     }
 
@@ -253,9 +257,10 @@ const createChannel = async () => ({
     const exchange = exchanges[sourceExchange];
     exchange.bindQueue(queue, pattern, options);
   },
-  publish: (exchangeName, routingKey, content, options = {}) => {
+  publish: function (exchangeName, routingKey, content, options = {}) {
     const exchange = exchanges[exchangeName];
     const queueNames = exchange.getTargetQueues(routingKey, options);
+    const { mandatory } = options;
     const message = {
       content,
       fields: {
@@ -264,6 +269,17 @@ const createChannel = async () => ({
       },
       properties: options
     };
+    // do not send these options to consumer
+    delete message.properties.mandatory;
+
+    if (!queueNames.length) {
+      const { alternateExchange } = exchange.getOptions();
+      if (mandatory) {
+        this.emit('return', message);
+      } else if (alternateExchange) {
+        return this.publish(alternateExchange, routingKey, content, options);
+      }
+    }
 
     for(const queueName of queueNames) {
       message[queueNameSymbol] = queueName;
@@ -350,13 +366,19 @@ const createConfirmChannel = async () => {
     return true;
   }
 
+  // bind new context to all methods
+  for (const key in basic) {
+    if (typeof basic[key] === 'function') {
+      basic[key] = basic[key].bind(basic);
+    }
+  }
   return {
     ...basic,
     publish: (exchange, routingKey, content, options, cb) =>
-        handler(basic.publish.bind(basic), exchange, routingKey, content, options, cb),
+        handler(basic.publish, exchange, routingKey, content, options, cb),
     sendToQueue: (queue, content, options, cb) =>
-        handler(basic.sendToQueue.bind(basic), queue, content, options, cb),
-    waitForConfirms: async () => Promise.all(pendingPublishes.slice())
+        handler(basic.sendToQueue, queue, content, options, cb),
+    waitForConfirms: async () => Promise.all(pendingPublishes.slice()),
   };
 };
 
@@ -385,7 +407,7 @@ const credentials = {
   external: () => ({
     mechanism: 'EXTERNAL',
     response: () => '',
-  })
+  }),
 }
 
 module.exports = {
@@ -395,8 +417,8 @@ module.exports = {
     createConfirmChannel,
     isConnected: true,
     close: function () {
-      this.emit('close')
+      this.emit('close');
     }
   }),
-  credentials
+  credentials,
 };
