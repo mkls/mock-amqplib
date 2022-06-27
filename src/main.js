@@ -210,7 +210,7 @@ const deadLetterProceed = (channel, message, reason, perMessageTtl = false) => {
 
   msg.properties.headers['x-death'].unshift(dlEntry);
 
-  channel.publish(dlExchange, dlRoutingKey, msg.content, msg.properties);
+  channel.publish(dlExchange, dlRoutingKey, msg.content, msg.properties, () => {});
 };
 
 const createChannel = async () => ({
@@ -271,8 +271,8 @@ const createChannel = async () => ({
     }
     return true;
   },
-  sendToQueue: async function (queueName, content, options = { headers: {} }) {
-    return this.publish(DEFAULT_EXCHANGE_NAME, queueName, content, options);
+  sendToQueue: async function (queueName, content, options = { headers: {} }, cb = () => {}) {
+    return this.publish(DEFAULT_EXCHANGE_NAME, queueName, content, options, cb);
   },
   get: async (queueName, { noAck } = {}) => {
     return queues[queueName].get();
