@@ -592,11 +592,11 @@ test('should route to DLX after nack (requeue=false)', async () => {
         'x-first-death-queue': nackQueue,
         'x-first-death-reason': 'rejected',
         'x-death': [{
-          count: 0,
+          count: 1,
           exchange: '',
           queue: nackQueue,
           reason: 'rejected',
-          'routing-keys': nackQueue,
+          'routing-keys': [nackQueue],
         }]
       },
     },

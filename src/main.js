@@ -193,14 +193,14 @@ const deadLetterProceed = (channel, message, reason, perMessageTtl = false) => {
   }
 
   const dlEntry = {
+    count: msg.properties.headers['x-death'].filter(
+        v => v.queue === queueName && v.reason === reason
+    ).length + 1,
+    exchange: msg.fields.exchange,
     queue: queueName,
     reason,
-    time: Date.now(),
-    exchange: msg.fields.exchange,
-    'routing-keys': msg.fields.routingKey,
-    count: msg.properties.headers['x-death'].filter(
-      v => v.queue === queueName && v.reason === reason
-    ).length,
+    'routing-keys': [msg.fields.routingKey],
+    time: { '!': 'timestamp', value: Date.now() / 1000 },
   };
 
   if (reason === 'expired' && perMessageTtl) {
