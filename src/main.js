@@ -4,7 +4,7 @@ const DEFAULT_EXCHANGE_NAME = '';
 const msgQueueNames = new WeakMap();
 const deadLetterTimers = new WeakMap();
 
-const createQueue = (options, channel) => {
+const createQueue = options => {
   let messages = [];
   let subscriber = null;
   const getTtl = () => {
@@ -35,8 +35,10 @@ const createQueue = (options, channel) => {
     if (ttl >= 0) {
       deadLetterTimers.set(msg, setTimeout(() => {
         const index = messages.indexOf(msg);
-        messages.splice(index, 1);
-        deadLetterProceed(channel, clearExpiration(msg), 'expired', ttl === msgTtl);
+        if (index >= 0) {
+          messages.splice(index, 1);
+          deadLetterProceed(clearExpiration(msg), 'expired', ttl === msgTtl);
+        }
       }, ttl));
     }
     return msg;
@@ -173,8 +175,47 @@ const exchanges = {
   [DEFAULT_EXCHANGE_NAME]: createDirectExchange({}),
 };
 
-const deadLetterProceed = (channel, message, reason, perMessageTtl = false) => {
-  const queueName = msgQueueNames.get(message);
+const publishMessage = (exchangeName, routingKey, content, options) => {
+  const exchange = exchanges[exchangeName];
+  const queueNames = exchange.getTargetQueues(routingKey, options);
+  const { mandatory } = options;
+  const message = {
+    content,
+    fields: {
+      exchange: exchangeName,
+      routingKey
+    },
+    properties: options
+  };
+
+  if (!queueNames.length) {
+    const { alternateExchange } = exchange.getOptions();
+    if (mandatory) {
+      // returns message to emit it as 'return' event
+      return message;
+    } else if (!!alternateExchange && alternateExchange !== exchangeName) {
+      return publishMessage(alternateExchange, routingKey, content, options);
+    }
+  }
+
+  for(const queueName of queueNames) {
+    const newMsg = { ...message };
+    msgQueueNames.set(newMsg, queueName);
+    queues[queueName].add(newMsg);
+  }
+}
+
+
+const getQueueName = msg => {
+  const queueName = msgQueueNames.get(msg);
+  if (!queueName) {
+    throw new Error('Message object is not found');
+  }
+  return queueName;
+}
+
+const deadLetterProceed = (message, reason, perMessageTtl = false) => {
+  const queueName = getQueueName(message);
   const {
     exchange: dlExchange,
     routingKey: dlRoutingKey = message.fields.routingKey,
@@ -214,7 +255,7 @@ const deadLetterProceed = (channel, message, reason, perMessageTtl = false) => {
 
   msg.properties.headers['x-death'].unshift(dlEntry);
 
-  channel.publish(dlExchange, dlRoutingKey, msg.content, msg.properties, () => {});
+  publishMessage(dlExchange, dlRoutingKey, msg.content, msg.properties);
 };
 
 const createChannel = async () => ({
@@ -225,7 +266,7 @@ const createChannel = async () => ({
       queueName = generateRandomQueueName();
     }
     if (!(queueName in queues)) {
-      queues[queueName] = createQueue(options, this);
+      queues[queueName] = createQueue(options);
       const exchange = exchanges[DEFAULT_EXCHANGE_NAME];
       exchange.bindQueue(queueName, queueName);
     }
@@ -258,33 +299,9 @@ const createChannel = async () => ({
     exchange.bindQueue(queue, pattern, options);
   },
   publish: function (exchangeName, routingKey, content, options = {}) {
-    const exchange = exchanges[exchangeName];
-    const queueNames = exchange.getTargetQueues(routingKey, options);
-    const { mandatory } = options;
-    const message = {
-      content,
-      fields: {
-        exchange: exchangeName,
-        routingKey
-      },
-      properties: options
-    };
-    // do not send these options to consumer
-    delete message.properties.mandatory;
-
-    if (!queueNames.length) {
-      const { alternateExchange } = exchange.getOptions();
-      if (mandatory) {
-        this.emit('return', message);
-      } else if (alternateExchange) {
-        return this.publish(alternateExchange, routingKey, content, options);
-      }
-    }
-
-    for(const queueName of queueNames) {
-      const newMsg = { ...message };
-      msgQueueNames.set(newMsg, queueName);
-      queues[queueName].add(newMsg);
+    const res = publishMessage(exchangeName, routingKey, content, options);
+    if (typeof res === 'object') {
+      this.emit('return', res);
     }
     return true;
   },
@@ -303,9 +320,9 @@ const createChannel = async () => ({
   ack: () => {},
   nack: function (message, allUpTo = false, requeue = true) {
     if (requeue) {
-      queues[msgQueueNames.get(message)].add(message);
+      queues[getQueueName(message)].add(message);
     } else {
-      deadLetterProceed(this, message, 'rejected');
+      deadLetterProceed(message, 'rejected');
     }
   },
   checkQueue: async queueName => ({
