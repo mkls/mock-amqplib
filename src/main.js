@@ -1,8 +1,8 @@
 const EventEmitter = require('events');
 
 const DEFAULT_EXCHANGE_NAME = '';
-const queueNameSymbol = Symbol('queueNameSymbol');
-const deadLetterHandler = Symbol('deadLetterHandler');
+const msgQueueNames = new WeakMap();
+const deadLetterTimers = new WeakMap();
 
 const createQueue = (options, channel) => {
   let messages = [];
@@ -18,9 +18,9 @@ const createQueue = (options, channel) => {
     return undefined;
   };
   const clearExpiration = msg => {
-    if (msg && msg.fields) {
-      clearTimeout(msg[deadLetterHandler]);
-      delete msg[deadLetterHandler];
+    if (deadLetterTimers.has(msg)) {
+      clearTimeout(deadLetterTimers.get(msg));
+      deadLetterTimers.delete(msg);
     }
     return msg;
   };
@@ -33,11 +33,11 @@ const createQueue = (options, channel) => {
                 : undefined;
 
     if (ttl >= 0) {
-      msg[deadLetterHandler] = setTimeout(() => {
+      deadLetterTimers.set(msg, setTimeout(() => {
         const index = messages.indexOf(msg);
         messages.splice(index, 1);
         deadLetterProceed(channel, clearExpiration(msg), 'expired', ttl === msgTtl);
-      }, ttl);
+      }, ttl));
     }
     return msg;
   };
@@ -174,7 +174,7 @@ const exchanges = {
 };
 
 const deadLetterProceed = (channel, message, reason, perMessageTtl = false) => {
-  const queueName = message[queueNameSymbol];
+  const queueName = msgQueueNames.get(message);
   const {
     exchange: dlExchange,
     routingKey: dlRoutingKey = message.fields.routingKey,
@@ -282,8 +282,9 @@ const createChannel = async () => ({
     }
 
     for(const queueName of queueNames) {
-      message[queueNameSymbol] = queueName;
-      queues[queueName].add(message);
+      const newMsg = { ...message };
+      msgQueueNames.set(newMsg, queueName);
+      queues[queueName].add(newMsg);
     }
     return true;
   },
@@ -302,7 +303,7 @@ const createChannel = async () => ({
   ack: () => {},
   nack: function (message, allUpTo = false, requeue = true) {
     if (requeue) {
-      queues[message[queueNameSymbol]].add(message);
+      queues[msgQueueNames.get(message)].add(message);
     } else {
       deadLetterProceed(this, message, 'rejected');
     }
