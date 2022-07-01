@@ -60,6 +60,7 @@ const createQueue = options => {
     },
     stopConsume: () => (subscriber = null),
     getMessageCount: () => messages.length,
+    getConsumerCount: () => subscriber ? 1 : 0,
     purge: () => (messages = []),
     getDeadLetterInfo: () => {
       if (options && options.arguments) {
@@ -270,7 +271,11 @@ const createChannel = async () => ({
       const exchange = exchanges[DEFAULT_EXCHANGE_NAME];
       exchange.bindQueue(queueName, queueName);
     }
-    return { queue: queueName };
+    return {
+      queue: queueName,
+      messageCount: queues[queueName].getMessageCount(),
+      consumerCount: queues[queueName].getConsumerCount(),
+    };
   },
   assertExchange: async (exchangeName, type, options = {}) => {
     let exchange;
@@ -327,7 +332,8 @@ const createChannel = async () => ({
   },
   checkQueue: async queueName => ({
     queue: queueName,
-    messageCount: queues[queueName].getMessageCount()
+    messageCount: queues[queueName].getMessageCount(),
+    consumerCount: queues[queueName].getConsumerCount(),
   }),
   checkExchange: async exchangeName => ({
     exchange: exchangeName,
