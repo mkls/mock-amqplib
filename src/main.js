@@ -1,32 +1,81 @@
-const EventEmitter = require('events')
+const EventEmitter = require('events');
 
 const DEFAULT_EXCHANGE_NAME = '';
+const msgQueueNames = new WeakMap();
+const deadLetterTimers = new WeakMap();
 
-const createQueue = () => {
+const createQueue = options => {
   let messages = [];
   let subscriber = null;
+  const getTtl = () => {
+    if (
+        options &&
+        options.arguments &&
+        !isNaN(Number(options.arguments['x-message-ttl']))
+    ) {
+      return Number(options.arguments['x-message-ttl']);
+    }
+    return undefined;
+  };
+  const clearExpiration = msg => {
+    if (deadLetterTimers.has(msg)) {
+      clearTimeout(deadLetterTimers.get(msg));
+      deadLetterTimers.delete(msg);
+    }
+    return msg;
+  };
+  const setExpiration = msg => {
+    const msgTtl = Number(msg.properties.expiration);
+    const queueTtl = getTtl();
+    const ttl = msgTtl >= 0 && queueTtl >= 0 ? Math.min(msgTtl, queueTtl)
+        : msgTtl >= 0 ? msgTtl
+            : queueTtl >= 0 ? queueTtl
+                : undefined;
+
+    if (ttl >= 0) {
+      deadLetterTimers.set(msg, setTimeout(() => {
+        const index = messages.indexOf(msg);
+        if (index >= 0) {
+          messages.splice(index, 1);
+          deadLetterProceed(clearExpiration(msg), 'expired', ttl === msgTtl);
+        }
+      }, ttl));
+    }
+    return msg;
+  };
 
   return {
     add: async item => {
       if (subscriber) {
         await subscriber(item);
       } else {
-        messages.push(item);
+        messages.push(setExpiration(item));
       }
     },
-    get: () => messages.shift() || false,
+    get: () => clearExpiration(messages.shift()) || false,
     addConsumer: consumer => {
-      messages.forEach(item => consumer(item));
+      messages.forEach(item => consumer(clearExpiration(item)));
       messages = [];
       subscriber = consumer;
     },
     stopConsume: () => (subscriber = null),
     getMessageCount: () => messages.length,
-    purge: () => (messages = [])
+    getConsumerCount: () => subscriber ? 1 : 0,
+    purge: () => (messages = []),
+    getDeadLetterInfo: () => {
+      if (options && options.arguments) {
+        const {
+          'x-dead-letter-exchange': exchange,
+          'x-dead-letter-routing-key': routingKey,
+        } = options.arguments;
+        return { exchange, routingKey };
+      }
+      return {};
+    },
   };
 };
 
-const createFanoutExchange = () => {
+const createFanoutExchange = options => {
   const bindings = [];
   return {
     bindQueue: (queueName, pattern, options) => {
@@ -37,12 +86,13 @@ const createFanoutExchange = () => {
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
-      return [...bindings.map(binding => binding.targetQueue)];
-    }
+      return bindings.map(b => b.targetQueue);
+    },
+    getOptions: () => options,
   };
 };
 
-const createDirectExchange = () => {
+const createDirectExchange = options => {
   const bindings = [];
   return {
     bindQueue: (queueName, pattern, options) => {
@@ -52,14 +102,13 @@ const createDirectExchange = () => {
         pattern
       });
     },
-    getTargetQueues: (routingKey, options = {}) => {
-      const matchingBinding = bindings.find(binding => binding.pattern === routingKey);
-      return [matchingBinding.targetQueue];
-    }
+    getTargetQueues: (routingKey, options = {}) =>
+      bindings.filter(b => b.pattern === routingKey).map(b => b.targetQueue),
+    getOptions: () => options,
   };
 };
 
-const createTopicExchange = () => {
+const createTopicExchange = options => {
   const bindings = [];
   const maskToRegexp = mask => {
     const words = mask.split('.');
@@ -97,14 +146,13 @@ const createTopicExchange = () => {
         patternRegexp: maskToRegexp(pattern)
       });
     },
-    getTargetQueues: (routingKey, options = {}) => {
-      const matchingBinding = bindings.filter(binding => binding.patternRegexp.test(routingKey));
-      return matchingBinding.map(b => b.targetQueue);
-    }
+    getTargetQueues: (routingKey, options = {}) =>
+      bindings.filter(b => b.patternRegexp.test(routingKey)).map(b => b.targetQueue),
+    getOptions: () => options,
   };
 };
 
-const createHeadersExchange = () => {
+const createHeadersExchange = options => {
   const bindings = [];
   return {
     bindQueue: (queueName, pattern, options) => {
@@ -115,49 +163,136 @@ const createHeadersExchange = () => {
       });
     },
     getTargetQueues: (routingKey, options = {}) => {
-      const isMatching = (binding, headers) =>
+      const isMatching = (binding, headers = {}) =>
         Object.keys(binding.options).every(key => binding.options[key] === headers[key]);
-      const matchingBinding = bindings.find(binding => isMatching(binding, options.headers || {}));
-      return [matchingBinding.targetQueue];
-    }
+      return bindings.filter(b => isMatching(b, options.headers)).map(b => b.targetQueue);
+    },
+    getOptions: () => options,
   };
 };
 
 const queues = {};
 const exchanges = {
-  [DEFAULT_EXCHANGE_NAME]: createDirectExchange()
+  [DEFAULT_EXCHANGE_NAME]: createDirectExchange({}),
+};
+
+const publishMessage = (exchangeName, routingKey, content, options) => {
+  const exchange = exchanges[exchangeName];
+  const queueNames = exchange.getTargetQueues(routingKey, options);
+  const { mandatory } = options;
+  const message = {
+    content,
+    fields: {
+      exchange: exchangeName,
+      routingKey
+    },
+    properties: options
+  };
+
+  if (!queueNames.length) {
+    const { alternateExchange } = exchange.getOptions();
+    if (mandatory) {
+      // returns message to emit it as 'return' event
+      return message;
+    } else if (!!alternateExchange && alternateExchange !== exchangeName) {
+      return publishMessage(alternateExchange, routingKey, content, options);
+    }
+  }
+
+  for(const queueName of queueNames) {
+    const newMsg = { ...message };
+    msgQueueNames.set(newMsg, queueName);
+    queues[queueName].add(newMsg);
+  }
+}
+
+
+const getQueueName = msg => {
+  const queueName = msgQueueNames.get(msg);
+  if (!queueName) {
+    throw new Error('Message object is not found');
+  }
+  return queueName;
+}
+
+const deadLetterProceed = (message, reason, perMessageTtl = false) => {
+  const queueName = getQueueName(message);
+  const {
+    exchange: dlExchange,
+    routingKey: dlRoutingKey = message.fields.routingKey,
+  } = queues[queueName].getDeadLetterInfo();
+  if (dlExchange === undefined) {
+    return;
+  }
+  const msg = { ...message };
+
+  if (!msg.properties.headers) {
+    msg.properties.headers = {};
+  }
+  if (!msg.properties.headers['x-death']) {
+    msg.properties.headers['x-death'] = [];
+  }
+  if (!msg.properties.headers['x-first-death-reason']) {
+    msg.properties.headers['x-first-death-reason'] = reason;
+    msg.properties.headers['x-first-death-queue'] = queueName;
+    msg.properties.headers['x-first-death-exchange'] = msg.fields.exchange;
+  }
+
+  const dlEntry = {
+    count: msg.properties.headers['x-death'].filter(
+        v => v.queue === queueName && v.reason === reason
+    ).length + 1,
+    exchange: msg.fields.exchange,
+    queue: queueName,
+    reason,
+    'routing-keys': [msg.fields.routingKey],
+    time: { '!': 'timestamp', value: Date.now() / 1000 },
+  };
+
+  if (reason === 'expired' && perMessageTtl) {
+    dlEntry['original-expiration'] = msg.properties.expiration;
+    delete msg.properties.expiration;
+  }
+
+  msg.properties.headers['x-death'].unshift(dlEntry);
+
+  publishMessage(dlExchange, dlRoutingKey, msg.content, msg.properties);
 };
 
 const createChannel = async () => ({
   ...EventEmitter.prototype,
   close: () => {},
-  assertQueue: async queueName => {
+  assertQueue: async function (queueName, options) {
     if (!queueName) {
       queueName = generateRandomQueueName();
     }
     if (!(queueName in queues)) {
-      queues[queueName] = createQueue();
+      queues[queueName] = createQueue(options);
       const exchange = exchanges[DEFAULT_EXCHANGE_NAME];
       exchange.bindQueue(queueName, queueName);
     }
-    return { queue: queueName };
+    return {
+      queue: queueName,
+      messageCount: queues[queueName].getMessageCount(),
+      consumerCount: queues[queueName].getConsumerCount(),
+    };
   },
-  assertExchange: async (exchangeName, type) => {
+  assertExchange: async (exchangeName, type, options = {}) => {
     let exchange;
 
     switch(type) {
       case 'fanout':
-        exchange = createFanoutExchange();
+        exchange = createFanoutExchange(options);
         break;
       case 'direct':
       case 'x-delayed-message':
-        exchange = createDirectExchange();
+        exchange = createDirectExchange(options);
         break;
       case 'topic':
-        exchange = createTopicExchange();
+        exchange = createTopicExchange(options);
         break;
       case 'headers':
-        exchange = createHeadersExchange();
+        exchange = createHeadersExchange(options);
         break;
     }
 
@@ -168,24 +303,14 @@ const createChannel = async () => ({
     const exchange = exchanges[sourceExchange];
     exchange.bindQueue(queue, pattern, options);
   },
-  publish: async (exchangeName, routingKey, content, options = {}) => {
-    const exchange = exchanges[exchangeName];
-    const queueNames = exchange.getTargetQueues(routingKey, options);
-    const message = {
-      content,
-      fields: {
-        exchange: exchangeName,
-        routingKey
-      },
-      properties: options
-    };
-
-    for(const queueName of queueNames) {
-      queues[queueName].add(message);
+  publish: function (exchangeName, routingKey, content, options = {}) {
+    const res = publishMessage(exchangeName, routingKey, content, options);
+    if (typeof res === 'object') {
+      this.emit('return', res);
     }
     return true;
   },
-  sendToQueue: async function (queueName, content, options = { headers: {} }) {
+  sendToQueue: function (queueName, content, options = { headers: {} }) {
     return this.publish(DEFAULT_EXCHANGE_NAME, queueName, content, options);
   },
   get: async (queueName, { noAck } = {}) => {
@@ -197,15 +322,18 @@ const createChannel = async () => ({
     return { consumerTag: queueName };
   },
   cancel: async consumerTag => queues[consumerTag].stopConsume(),
-  ack: async () => {},
-  nack: async (message, allUpTo = false, requeue = true) => {
+  ack: () => {},
+  nack: function (message, allUpTo = false, requeue = true) {
     if (requeue) {
-      queues[message.fields.routingKey].add(message);
+      queues[getQueueName(message)].add(message);
+    } else {
+      deadLetterProceed(message, 'rejected');
     }
   },
-  checkQueue: queueName => ({
+  checkQueue: async queueName => ({
     queue: queueName,
-    messageCount: queues[queueName].getMessageCount()
+    messageCount: queues[queueName].getMessageCount(),
+    consumerCount: queues[queueName].getConsumerCount(),
   }),
   checkExchange: async exchangeName => ({
     exchange: exchangeName,
@@ -262,13 +390,19 @@ const createConfirmChannel = async () => {
     return true;
   }
 
+  // bind new context to all methods
+  for (const key in basic) {
+    if (typeof basic[key] === 'function') {
+      basic[key] = basic[key].bind(basic);
+    }
+  }
   return {
     ...basic,
     publish: (exchange, routingKey, content, options, cb) =>
-        handler(basic.publish.bind(basic), exchange, routingKey, content, options, cb),
+        handler(basic.publish, exchange, routingKey, content, options, cb),
     sendToQueue: (queue, content, options, cb) =>
-        handler(basic.sendToQueue.bind(basic), queue, content, options, cb),
-    waitForConfirms: async () => Promise.all(pendingPublishes.slice())
+        handler(basic.sendToQueue, queue, content, options, cb),
+    waitForConfirms: async () => Promise.all(pendingPublishes.slice()),
   };
 };
 
@@ -297,7 +431,7 @@ const credentials = {
   external: () => ({
     mechanism: 'EXTERNAL',
     response: () => '',
-  })
+  }),
 }
 
 module.exports = {
@@ -307,8 +441,8 @@ module.exports = {
     createConfirmChannel,
     isConnected: true,
     close: function () {
-      this.emit('close')
+      this.emit('close');
     }
   }),
-  credentials
+  credentials,
 };

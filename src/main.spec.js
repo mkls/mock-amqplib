@@ -2,6 +2,9 @@ const amqp = require('./main');
 
 const generateQueueName = () => `test-queue-${Math.random()}`;
 const generateExchangeName = () => `test-exchange-${Math.random()}`;
+const sleep = timeMs => new Promise(resolve => {
+  setTimeout(resolve, timeMs);
+});
 
 test('getting a single message from queue', async () => {
   const connection = await amqp.connect('some-random-uri');
@@ -9,7 +12,7 @@ test('getting a single message from queue', async () => {
   const queueName = generateQueueName();
   await channel.assertQueue(queueName, { durable: true });
 
-  await channel.sendToQueue(queueName, 'test-content', {
+  channel.sendToQueue(queueName, 'test-content', {
     headers: { groupBy: 'groupness' }
   });
 
@@ -32,16 +35,16 @@ test('consuming messages', async () => {
   await channel.assertQueue(queueName, { durable: true });
   const consumer = jest.fn();
 
-  await channel.sendToQueue(queueName, 'test-message-1');
+  channel.sendToQueue(queueName, 'test-message-1');
 
   await channel.prefetch(10);
   const { consumerTag } = await channel.consume(queueName, consumer);
 
-  await channel.sendToQueue(queueName, 'test-message-2');
+  channel.sendToQueue(queueName, 'test-message-2');
 
   await channel.cancel(consumerTag);
 
-  await channel.sendToQueue(queueName, 'test-message-3');
+  channel.sendToQueue(queueName, 'test-message-3');
 
   expect(consumer.mock.calls).toMatchObject([
     [{ content: 'test-message-1', properties: { headers: expect.anything() } }],
@@ -55,12 +58,12 @@ test('nackinkg a message puts it back to queue', async () => {
   const queueName = generateQueueName();
   await channel.assertQueue(queueName, { durable: true });
 
-  await channel.sendToQueue(queueName, 'test-content');
+  channel.sendToQueue(queueName, 'test-content');
 
   const message = await channel.get(queueName);
   const afterRead = await channel.get(queueName);
 
-  await channel.nack(message);
+  channel.nack(message);
 
   const reRead = await channel.get(queueName);
 
@@ -73,8 +76,8 @@ test('checkQueue return status for the queue', async () => {
   const channel = await connection.createChannel();
   const queueName = generateQueueName();
   await channel.assertQueue(queueName, { durable: true });
-  await channel.sendToQueue(queueName, 'test-content-1');
-  await channel.sendToQueue(queueName, 'test-content-2');
+  channel.sendToQueue(queueName, 'test-content-1');
+  channel.sendToQueue(queueName, 'test-content-2');
 
   const status = await channel.checkQueue(queueName);
 
@@ -101,8 +104,8 @@ test('purgeQueue deletes messages from queue', async () => {
   const channel = await connection.createChannel();
   const queueName = generateQueueName();
   await channel.assertQueue(queueName, { durable: true });
-  await channel.sendToQueue(queueName, 'test-content-1');
-  await channel.sendToQueue(queueName, 'test-content-2');
+  channel.sendToQueue(queueName, 'test-content-1');
+  channel.sendToQueue(queueName, 'test-content-2');
 
   await channel.purgeQueue(queueName);
 
@@ -153,7 +156,6 @@ test('direct exchange', async () => {
 test('x-delayed-message exchange', async () => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
-  const queueName = generateQueueName();
   await channel.assertExchange('retry-exchange', 'x-delayed-message');
   await channel.assertQueue('retry-queue-10s');
   await channel.assertQueue('retry-queue-20s');
@@ -204,7 +206,7 @@ const routingKeys = [
   'a1', '2b', '3c4', 'a1.2b', 'a1.3c4', 'a1.d', '2b.3c4', '2b.d', '3c4.d',
   'a1.2b.3c4', 'a1.3c4.d', 'a1.2b.d', '2b.3c4.d', 'a1.2b.3c4.d'
 ];
-const cases = [
+const topicCases = [
   { pattern: 'some.pattern',  result: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
   { pattern: 'a1.2b',         result: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
   { pattern: 'a1.*.*',        result: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0] },
@@ -219,7 +221,7 @@ const cases = [
   { pattern: '#.#.#',         result: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
   { pattern: '#',             result: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
 ];
-test.each(cases)('topic exchange: $pattern', async (test) => {
+test.each(topicCases)('topic exchange: $pattern', async (test) => {
   const connection = await amqp.connect('some-random-uri');
   const channel = await connection.createChannel();
   const queueName = generateQueueName();
@@ -231,15 +233,19 @@ test.each(cases)('topic exchange: $pattern', async (test) => {
   for (const key of routingKeys) {
     const i = routingKeys.indexOf(key);
     await channel.publish(exchangeName, key, 'content-1');
-    const expected = test.result[i] ? {
-      content: 'content-1',
-      fields: {
-        exchange: exchangeName,
-        routingKey: key
-      },
-      properties: {}
-    } : false;
-    expect(await channel.get(queueName)).toEqual(expected);
+    const message = await channel.get(queueName);
+    if (test.result[i]) {
+      expect(message).toMatchObject({
+        content: 'content-1',
+        fields: {
+          exchange: exchangeName,
+          routingKey: key
+        },
+        properties: {}
+      });
+    } else {
+      expect(message).toEqual(false);
+    }
   }
 });
 
@@ -353,7 +359,7 @@ test('it should always set header property of messages even if not set', async (
   const queueName = generateQueueName();
   await channel.assertQueue(queueName);
 
-  await channel.sendToQueue(queueName, 'test-content');
+  channel.sendToQueue(queueName, 'test-content');
 
   const message = await channel.get(queueName);
 
@@ -371,10 +377,10 @@ it('should not put nack-ed messages back to queue if requeue is set to false', a
   const queueName = generateQueueName();
   await channel.assertQueue(queueName);
 
-  await channel.sendToQueue(queueName, 'test-content');
+  channel.sendToQueue(queueName, 'test-content');
 
   const message = await channel.get(queueName);
-  await channel.nack(message, false, false);
+  channel.nack(message, false, false);
 
   const reRead = await channel.get(queueName);
 
@@ -441,9 +447,9 @@ test('ensure consuming messages works even is queues is asserted multiple times'
   });
 
   await channel.assertQueue(queueName);
-  await channel.sendToQueue(queueName, 1);
+  channel.sendToQueue(queueName, 1);
   await channel.assertQueue(queueName);
-  await channel.sendToQueue(queueName, 2);
+  channel.sendToQueue(queueName, 2);
 
   expect(receivedMessages).toEqual([1, 2]);
 });
@@ -459,7 +465,7 @@ test('promise race condition for publishing to another queue from consumer', asy
 
   const cb = async () => {
     await listener();
-    await channel.sendToQueue(errorQueueName);
+    channel.sendToQueue(errorQueueName);
   }
 
   await channel.assertQueue(queueName);
@@ -468,8 +474,9 @@ test('promise race condition for publishing to another queue from consumer', asy
   await channel.consume(queueName, cb);
   await channel.consume(errorQueueName, listener);
 
-  await channel.sendToQueue(queueName, 2);
+  channel.sendToQueue(queueName, 2);
 
+  await sleep(0);
   expect(listener).toBeCalledTimes(2);
 });
 
@@ -482,4 +489,171 @@ test('emitting on a connection triggers on callbacks', async () => {
   connection.emit('error');
 
   expect(listener).toBeCalled();
+});
+
+const ttlCases = [
+  { wait: 3, queueTtl: 5, msgTtl: undefined, result: true },
+  { wait: 7, queueTtl: 5, msgTtl: undefined, result: false },
+  { wait: 3, queueTtl: undefined, msgTtl: 5, result: true },
+  { wait: 7, queueTtl: undefined, msgTtl: 5, result: false },
+  { wait: 3, queueTtl: 7, msgTtl: 5, result: true },
+  { wait: 6, queueTtl: 7, msgTtl: 5, result: false },
+  { wait: 8, queueTtl: 7, msgTtl: 5, result: false },
+]
+test.each(ttlCases)(`should receive=$result message when message TTL=$msgTtl and queue TTL=$queueTtl after waiting $wait`, async (test) => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  const queueName = generateQueueName();
+  const queueArgs = test.queueTtl >= 0 ? {
+    'x-message-ttl': test.queueTtl,
+  } : undefined;
+  await channel.assertQueue(queueName, { durable: true, arguments: queueArgs });
+
+  const publishOptions = test.msgTtl >= 0 ? {
+    expiration: test.msgTtl,
+  } : undefined;
+  channel.sendToQueue(queueName, 'test-content', publishOptions);
+  await sleep(test.wait);
+
+  const message = await channel.get(queueName);
+
+  expect(!!message).toEqual(test.result);
+});
+
+const dlxCases = [
+  { wait: 2,   qTtl: [4, 4, 4],  msgTtl: undefined,  result: 0 },
+  { wait: 6,   qTtl: [4, 4, 4],  msgTtl: undefined,  result: 1 },
+  { wait: 10,  qTtl: [4, 4, 4],  msgTtl: undefined,  result: 2 },
+  { wait: 14,  qTtl: [4, 4, 4],  msgTtl: undefined,  result: undefined },
+  { wait: 1,   qTtl: [4, 4, 4],  msgTtl: 2,          result: 0 },
+  { wait: 3,   qTtl: [4, 4, 4],  msgTtl: 2,          result: 1 },
+  { wait: 5,   qTtl: [4, 4, 4],  msgTtl: 2,          result: 1 },
+  { wait: 8,   qTtl: [4, 4, 4],  msgTtl: 2,          result: 2 },
+  { wait: 12,  qTtl: [4, 4, 4],  msgTtl: 2,          result: undefined },
+]
+test.each(dlxCases)('should route message with TTL=$msgTtl to queue ' +
+    '#$result when DLX defined on expiration after waiting $wait', async (test) => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  const queues = test.qTtl.map(() => generateQueueName());
+  const getArgs = i => test.qTtl[i] >= 0 ? {
+    'x-message-ttl': test.qTtl[i],
+    'x-dead-letter-exchange': i + 1 < queues.length ? '' : undefined,
+    'x-dead-letter-routing-key': i + 1 < queues.length ? queues[i + 1] : undefined,
+  } : undefined;
+  await Promise.all(queues.map((q, i) => channel.assertQueue(q, {
+    arguments: getArgs(i),
+  })));
+
+  const publishOptions = test.msgTtl >= 0 ? {
+    expiration: test.msgTtl,
+  } : undefined;
+  channel.sendToQueue(queues[0], 'test-content', publishOptions);
+  await sleep(test.wait);
+
+  for (let i = 0; i < queues.length; i++) {
+    const queue = queues[i];
+    const message = await channel.get(queue);
+    expect(!!message).toEqual(test.result === i);
+  }
+});
+
+test('should route to DLX after nack (requeue=false)', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createChannel();
+  const exchange = generateExchangeName();
+  const routingKey = 'key';
+  const nackQueue = generateQueueName();
+  const targetQueue = generateQueueName();
+
+  await channel.assertExchange(exchange, 'direct');
+  await channel.assertQueue(nackQueue, {
+    arguments: {
+      'x-dead-letter-exchange': exchange,
+      'x-dead-letter-routing-key': routingKey,
+    },
+  });
+  await channel.assertQueue(targetQueue);
+  await channel.bindQueue(targetQueue, exchange, routingKey);
+  channel.sendToQueue(nackQueue, 'test-content');
+
+  const message = await channel.get(nackQueue);
+  expect(message).toBeTruthy();
+
+  await channel.nack(message, false, false);
+
+  const msg = await channel.get(targetQueue);
+  expect(msg).toBeTruthy();
+  expect(msg).toMatchObject({
+    content: 'test-content',
+    fields: { exchange, routingKey },
+    properties: {
+      headers: {
+        'x-first-death-exchange': '', // first send was to queue directly
+        'x-first-death-queue': nackQueue,
+        'x-first-death-reason': 'rejected',
+        'x-death': [
+          {
+            count: 1,
+            exchange: '',
+            queue: nackQueue,
+            reason: 'rejected',
+            'routing-keys': [nackQueue],
+          },
+        ],
+      },
+    },
+  });
+});
+
+test('should emit return event when exchange:mandatory=true', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createConfirmChannel();
+  const queue = generateQueueName();
+  const exchange = generateExchangeName();
+  await channel.assertExchange(exchange, 'direct');
+  await channel.assertQueue(queue);
+  await channel.bindQueue(queue, exchange, 'right-pattern');
+
+  const returnCallback = jest.fn();
+  channel.on('return', msg => {
+    returnCallback(msg);
+  });
+  await new Promise((resolve, reject) => {
+    channel.publish(exchange, 'wrong-key', 'content-1', { mandatory: true }, (err, result) =>
+      err ? reject(err) : resolve(result)
+    );
+  });
+  expect(await channel.get(queue)).toEqual(false);
+  expect(returnCallback).toBeCalledWith(expect.objectContaining({
+    content: 'content-1',
+    fields: { exchange, routingKey: 'wrong-key' },
+  }));
+});
+
+test('should send to alternate exchange if specified', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createConfirmChannel();
+  const emptyQueue = generateQueueName();
+  const targetQueue = generateQueueName();
+  const emptyExchange = generateExchangeName();
+  const targetExchange = generateExchangeName();
+
+  await channel.assertExchange(emptyExchange, 'topic', { alternateExchange: targetExchange });
+  await channel.assertExchange(targetExchange, 'topic');
+  await channel.assertQueue(emptyQueue);
+  await channel.assertQueue(targetQueue);
+  await channel.bindQueue(emptyQueue, emptyExchange, 'wrong.*');
+  await channel.bindQueue(targetQueue, targetExchange, 'right.*');
+
+  await new Promise((resolve, reject) => {
+    channel.publish(emptyExchange, 'right.key', 'content-1', {}, (err, result) =>
+        err ? reject(err) : resolve(result)
+    );
+  });
+  expect(await channel.get(emptyQueue)).toEqual(false);
+  expect(await channel.get(targetQueue)).toMatchObject({
+    content: 'content-1',
+    fields: { exchange: targetExchange, routingKey: 'right.key' },
+  });
 });
