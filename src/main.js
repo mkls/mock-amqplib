@@ -186,7 +186,10 @@ const publishMessage = (exchangeName, routingKey, content, options) => {
       exchange: exchangeName,
       routingKey
     },
-    properties: options
+    properties: {
+      headers: {},
+      ...options
+    }
   };
 
   if (!queueNames.length) {
