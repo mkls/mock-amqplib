@@ -380,13 +380,17 @@ const createConfirmChannel = async () => {
               promiseStaff.resolver && promiseStaff.resolver();
               const i = pendingPublishes.indexOf(promiseStaff.promise);
               pendingPublishes.splice(i, 1);
-              process.nextTick(cb, null, ret);
+              if (cb) {
+                process.nextTick(cb, null, ret);
+              }
             },
             rej => {
               promiseStaff.rejector && promiseStaff.rejector();
               const i = pendingPublishes.indexOf(promiseStaff.promise);
               pendingPublishes.splice(i, 1);
-              process.nextTick(cb, rej);
+              if (cb) {
+                process.nextTick(cb, rej);
+              }
             },
         );
     // to mimic stream.write behaviour

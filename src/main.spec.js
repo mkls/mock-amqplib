@@ -82,6 +82,7 @@ test('checkQueue return status for the queue', async () => {
   const status = await channel.checkQueue(queueName);
 
   expect(status).toEqual({
+    consumerCount: 0,
     queue: queueName,
     messageCount: 2
   });
@@ -655,5 +656,23 @@ test('should send to alternate exchange if specified', async () => {
   expect(await channel.get(targetQueue)).toMatchObject({
     content: 'content-1',
     fields: { exchange: targetExchange, routingKey: 'right.key' },
+  });
+});
+
+test('should not fail when callback is not provided', async () => {
+  const connection = await amqp.connect('some-random-uri');
+  const channel = await connection.createConfirmChannel();
+  const targetQueueName = generateQueueName();
+  await channel.assertQueue(targetQueueName);
+
+  channel.sendToQueue(targetQueueName, 'content-1', {});
+  await new Promise((resolve) => setTimeout(resolve, 500))
+
+  expect(await channel.get(targetQueueName)).toMatchObject({
+    content: 'content-1',
+    fields: {
+      exchange: '',
+      routingKey: targetQueueName
+    }
   });
 });
